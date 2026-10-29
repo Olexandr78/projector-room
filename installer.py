@@ -95,18 +95,31 @@ def install_python_libraries():
     if platform.system() == "Windows":
         required_packages.append("comtypes")
 
-    pip_cmd = [sys.executable, "-m", "pip", "install"]
+    # Retry transient TLS/network failures and avoid reusing a partially
+    # downloaded/corrupted wheel from pip's cache.
+    pip_cmd = [
+        sys.executable, "-m", "pip", "install",
+        "--retries", "10",
+        "--timeout", "60",
+        "--no-cache-dir",
+        "--disable-pip-version-check",
+    ]
     if os.path.exists(REQUIREMENTS_PATH):
         cmd = pip_cmd + ["-r", REQUIREMENTS_PATH]
     else:
         cmd = pip_cmd + required_packages
 
     try:
-        log("Установка библиотек (Pillow, VLC, PyMuPDF, PPTX)... Пожалуйста, подождите...")
+        log("Установка библиотек (Pillow, VLC, PyMuPDF 1.x, PPTX)... Пожалуйста, подождите...")
+        log("Для временных ошибок сети предусмотрено до 10 повторных попыток.", "ℹ")
         subprocess.run(cmd, check=True)
         log("Все библиотеки успешно установлены!", "✔")
     except subprocess.CalledProcessError as e:
         log(f"Не удалось установить необходимые библиотеки: {e}", "✖")
+        log("Проверьте интернет-соединение и повторите запуск установщика. Частично скачанные файлы не будут взяты из кэша.", "ℹ")
+        return False
+    except OSError as e:
+        log(f"Не удалось запустить pip: {e}", "✖")
         return False
     return True
 
