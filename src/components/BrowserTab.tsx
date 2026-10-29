@@ -192,23 +192,39 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
         </a>
       </div>
 
-      {/* 3. Embedded Browser Preview in Teacher Console */}
+      {/* 3. Browser preview. In the desktop app, show status here because many sites
+          intentionally block iframe previews; the full page opens in the projector WebView. */}
       <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-2 h-[480px] flex items-center justify-center overflow-hidden shadow-inner">
-        <iframe
-          key={iframeKey}
-          src={currentBrowser.url}
-          title={currentBrowser.title}
-          allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
-          allowFullScreen
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
-          className="w-full h-full border-none rounded bg-white transition-transform"
-          style={{
-            transform: `scale(${currentBrowser.zoom})`,
-            transformOrigin: 'top left',
-            width: `${100 / currentBrowser.zoom}%`,
-            height: `${100 / currentBrowser.zoom}%`,
-          }}
-        />
+        {(window as Window & { pywebview?: { api?: unknown } }).pywebview?.api ? (
+          <div className="w-full h-full rounded-lg border border-neutral-800 bg-neutral-900 flex flex-col items-center justify-center p-8 text-center">
+            <Globe className="w-12 h-12 text-amber-400 mb-4" />
+            <h3 className="text-sm font-semibold text-neutral-100">Встроенный WebView проектора</h3>
+            <p className="text-xs text-neutral-400 mt-2 max-w-xl">
+              {currentBrowser.url === 'about:blank'
+                ? 'Введите адрес сайта выше и нажмите «На проектор».'
+                : 'Полная страница открывается прямо в окне проектора. Если сайт запрещает iframe, это не мешает обычной загрузке в WebView.'}
+            </p>
+            {currentBrowser.url !== 'about:blank' && (
+              <p className="mt-4 max-w-full truncate text-xs font-mono text-amber-300">{currentBrowser.url}</p>
+            )}
+          </div>
+        ) : (
+          <iframe
+            key={iframeKey}
+            src={currentBrowser.url}
+            title={currentBrowser.title}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
+            className="w-full h-full border-none rounded bg-white transition-transform"
+            style={{
+              transform: `scale(${currentBrowser.zoom})`,
+              transformOrigin: 'top left',
+              width: `${100 / currentBrowser.zoom}%`,
+              height: `${100 / currentBrowser.zoom}%`,
+            }}
+          />
+        )}
       </div>
     </div>
   );
