@@ -920,8 +920,7 @@ class DesktopWebviewApi:
         self.browser_window = None
 
     def open_site(self, url):
-        """Open a site as a top-level WebView so X-Frame-Options/CSP do not block it."""
-        import webview
+        """Navigate the existing projector WebView to a site (no iframe or extra window)."""
         from urllib.parse import urlparse
 
         url = str(url or "").strip()
@@ -932,68 +931,32 @@ class DesktopWebviewApi:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise ValueError("Разрешены только адреса http:// и https://")
-        if self.browser_window is not None:
-            try:
-                self.browser_window.load_url(url)
-                self.browser_window.show()
-                return True
-            except Exception:
-                self.browser_window = None
-        # Create the WebView surface, then reparent its native HWND into the
-        # existing projector window on Windows. pywebview itself does not expose
-        # a cross-platform parent-window argument.
         if self.projector_window is None:
             raise RuntimeError("Сначала откройте окно проектора")
-        displays = get_display_layout()
-        secondary = next((display for display in displays if not display.get("primary")), displays[1] if len(displays) > 1 else None)
-        if secondary:
-            x, y, width, height = secondary["x"], secondary["y"], secondary["width"], secondary["height"]
-        else:
-            x, y, width, height = 40, 40, 1280, 720
-        self.browser_window = webview.create_window(
-            "ProjectorRoomEmbeddedSite", url=url,
-            x=x, y=y, width=width, height=height,
-            fullscreen=False, frameless=True, resizable=False, text_select=True,
-        )
-
-        if sys.platform == "win32":
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.windll.user32
-            hwnd_parent = user32.FindWindowW(None, "Экран проектора")
-            hwnd_child = user32.FindWindowW(None, "ProjectorRoomEmbeddedSite")
-            if not hwnd_parent or not hwnd_child:
-                self.browser_window = None
-                raise RuntimeError("Не удалось встроить WebView в окно проектора")
-            GWL_STYLE = -16
-            WS_CHILD = 0x40000000
-            WS_POPUP = 0x80000000
-            WS_CAPTION = 0x00C00000
-            WS_THICKFRAME = 0x00040000
-            SWP_NOZORDER = 0x0004
-            SWP_FRAMECHANGED = 0x0020
-            get_long = user32.GetWindowLongPtrW
-            get_long.restype = ctypes.c_ssize_t
-            get_long.argtypes = [wintypes.HWND, ctypes.c_int]
-            set_long = user32.SetWindowLongPtrW
-            set_long.restype = ctypes.c_ssize_t
-            set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
-            style = get_long(hwnd_child, GWL_STYLE)
-            style = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_THICKFRAME) | WS_CHILD
-            set_long(hwnd_child, GWL_STYLE, style)
-            user32.SetParent(hwnd_child, hwnd_parent)
-            user32.SetWindowPos(hwnd_child, None, 0, 0, width, height, SWP_NOZORDER | SWP_FRAMECHANGED)
+        self.projector_window.load_url(url)
         return True
 
     def close_site(self):
-        """Hide the standalone site window when another lesson mode is selected."""
-        if self.browser_window is not None:
-            try:
-                self.browser_window.hide()
-            except Exception:
-                pass
+        """Return the projector WebView to the lesson UI after leaving browser mode."""
+        if self.projector_window is not None:
+            self.projector_window.load_url(self.base_url + "?mode=projector")
         return True
+
+    def save_pdf(self, filename, base64_data):
+        """Save an uploaded PDF under the local app server so both WebViews can access it."""
+        import base64
+        import uuid
+
+        data = base64.b64decode(str(base64_data or ""), validate=True)
+        if not data.startswith(b"%PDF-"):
+            raise ValueError("Выбранный файл не похож на PDF")
+        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        safe_name = "{}.pdf".format(uuid.uuid4().hex)
+        target = os.path.join(upload_dir, safe_name)
+        with open(target, "wb") as pdf_file:
+            pdf_file.write(data)
+        return self.base_url.rstrip("/") + "/uploads/" + safe_name
 
     def open_projector(self):
         import webview
