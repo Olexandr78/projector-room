@@ -21,6 +21,68 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 
+try:
+    from screeninfo import get_monitors
+except ImportError:
+    get_monitors = None
+
+
+def get_display_layout():
+    """Return detected displays as dictionaries, primary display first."""
+    displays = []
+    if get_monitors:
+        try:
+            for monitor in get_monitors():
+                displays.append({
+                    "x": int(monitor.x), "y": int(monitor.y),
+                    "width": int(monitor.width), "height": int(monitor.height),
+                    "primary": bool(getattr(monitor, "is_primary", False)),
+                    "name": str(getattr(monitor, "name", "") or "Display"),
+                })
+        except Exception:
+            displays = []
+
+    if not displays and sys.platform == "win32":
+        # Fallback using the Windows monitor API when screeninfo is unavailable.
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG),
+                            ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", RECT),
+                            ("rcWork", RECT), ("dwFlags", wintypes.DWORD)]
+
+            callback_type = ctypes.WINFUNCTYPE(
+                ctypes.c_int, wintypes.HMONITOR, wintypes.HDC,
+                ctypes.POINTER(RECT), wintypes.LPARAM
+            )
+            def collect_monitor(handle, _hdc, _rect, _data):
+                info = MONITORINFO()
+                info.cbSize = ctypes.sizeof(MONITORINFO)
+                if ctypes.windll.user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+                    r = info.rcMonitor
+                    displays.append({
+                        "x": int(r.left), "y": int(r.top),
+                        "width": int(r.right - r.left),
+                        "height": int(r.bottom - r.top),
+                        "primary": bool(info.dwFlags & 1),
+                        "name": "Windows display",
+                    })
+                return 1
+            callback = callback_type(collect_monitor)
+            ctypes.windll.user32.EnumDisplayMonitors(None, None, callback, 0)
+        except Exception:
+            displays = []
+
+    displays.sort(key=lambda item: (not item["primary"], item["x"], item["y"]))
+    return displays
+
+
+
 # Проверка библиотек
 try:
     import vlc
@@ -88,10 +150,21 @@ class ProjectorWindow(tk.Toplevel):
         super().__init__(master)
         self.title("Экран проектора")
         self.configure(bg="black")
-        
-        # Разворачиваем на весь экран
-        self.is_fullscreen = True
-        self.attributes("-fullscreen", True)
+        self.displays = get_display_layout()
+        self.target_display = self.displays[1] if len(self.displays) >= 2 else None
+
+        # Put the projector window on the second display before entering fullscreen.
+        # On a single-display setup keep a usable, non-fullscreen preview so the
+        # teacher console is not hidden by an accidental fullscreen window.
+        self.is_fullscreen = False
+        if self.target_display:
+            d = self.target_display
+            self.geometry(f"{d['width']}x{d['height']}+{d['x']}+{d['y']}")
+            self.update_idletasks()
+            self.attributes("-fullscreen", True)
+            self.is_fullscreen = True
+        else:
+            self.geometry("800x450+40+40")
         self.bind("<Escape>", lambda e: self.toggle_fullscreen(False))
         self.bind("<F11>", lambda e: self.toggle_fullscreen())
 
@@ -133,8 +206,12 @@ class ProjectorWindow(tk.Toplevel):
         self.video_frame.pack_forget()
         self.image_label.pack(fill=tk.BOTH, expand=True)
 
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
+        if self.target_display:
+            screen_w = self.target_display["width"]
+            screen_h = self.target_display["height"]
+        else:
+            screen_w = self.winfo_width()
+            screen_h = self.winfo_height()
 
         img_copy = pil_image.copy()
         img_copy.thumbnail((screen_w, screen_h), Image.Resampling.LANCZOS)
@@ -236,6 +313,19 @@ class TeacherConsole(tk.Tk):
     def open_projector(self):
         if not self.projector or not tk.Toplevel.winfo_exists(self.projector):
             self.projector = ProjectorWindow(self)
+        else:
+            try:
+                self.projector.deiconify()
+                self.projector.lift()
+            except tk.TclError:
+                self.projector = ProjectorWindow(self)
+        if not self.projector.target_display:
+            messagebox.showinfo(
+                "Второй экран не найден",
+                "Подключите проектор/монитор и выберите режим «Расширить» "
+                "в настройках дисплея Windows. Сейчас окно проектора открыто "
+                "в режиме предварительного просмотра."
+            )
 
     def toggle_blackout(self):
         self.is_blackout = not self.is_blackout
