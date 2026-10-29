@@ -29,22 +29,6 @@ interface ClassroomToolsTabProps {
   audioEnabled: boolean;
 }
 
-const PRESET_TIMERS = [
-  { label: '1 мин (Блиц)', seconds: 60 },
-  { label: '3 мин (Сбор тетрадей)', seconds: 180 },
-  { label: '5 мин (Проверочная)', seconds: 300 },
-  { label: '10 мин (Практикум)', seconds: 600 },
-  { label: '15 мин (Самостоятельная)', seconds: 900 },
-  { label: '40 мин (Урок целиком)', seconds: 2400 },
-];
-
-const PRESET_BANNERS = [
-  { text: '⚠️ Внимание на доску! Слушаем преподавателя', level: 'warning' as const },
-  { text: '🤫 Соблюдаем тишину! Идет самостоятельная работа', level: 'urgent' as const },
-  { text: '⏳ Осталось 2 минуты до сдачи работ!', level: 'warning' as const },
-  { text: '🔔 Звонок на перемену! Все свободны', level: 'info' as const },
-];
-
 export const ClassroomToolsTab: React.FC<ClassroomToolsTabProps> = ({
   state,
   config,
@@ -56,13 +40,14 @@ export const ClassroomToolsTab: React.FC<ClassroomToolsTabProps> = ({
   const [customAlertText, setCustomAlertText] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
   const [isPicking, setIsPicking] = useState(false);
+  const [customTimerMinutes, setCustomTimerMinutes] = useState('');
 
   // Active class from config
   const classes = config.classes || [];
-  const activeClass = classes.find((c) => c.id === config.activeClassId) || classes[0] || {
-    id: 'default',
-    name: 'Основной класс',
-    students: ['Ученик 1', 'Ученик 2', 'Ученик 3'],
+  const activeClass = classes.find((c) => c.id === config.activeClassId) || {
+    id: '',
+    name: 'Класс не выбран',
+    students: [],
   };
 
   // Timer tick interval
@@ -101,13 +86,16 @@ export const ClassroomToolsTab: React.FC<ClassroomToolsTabProps> = ({
     };
   }, [state.timer.active, state.timer.remainingSeconds]);
 
-  const setTimerPreset = (seconds: number, title: string) => {
+  const applyCustomTimer = () => {
+    const minutes = Number(customTimerMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 600) return;
+    const seconds = Math.round(minutes * 60);
     onUpdateState({
       timer: {
         active: false,
         remainingSeconds: seconds,
         totalSeconds: seconds,
-        title,
+        title: 'Таймер',
         showOnProjector: true,
       },
     });
@@ -191,7 +179,7 @@ export const ClassroomToolsTab: React.FC<ClassroomToolsTabProps> = ({
 
   // Pick random student from the currently selected class!
   const pickRandomStudent = () => {
-    const pool = activeClass.students.length > 0 ? activeClass.students : ['Ученик'];
+    const pool = activeClass.students;
     setIsPicking(true);
     let count = 0;
     const interval = setInterval(() => {
@@ -314,19 +302,27 @@ export const ClassroomToolsTab: React.FC<ClassroomToolsTabProps> = ({
           </div>
         </div>
 
-        {/* Quick Presets */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-neutral-800 text-xs">
-          <span className="text-neutral-500 mr-1 text-[11px]">Быстрый выбор:</span>
-          {PRESET_TIMERS.map((preset) => (
-            <button
-              key={preset.seconds}
-              type="button"
-              onClick={() => setTimerPreset(preset.seconds, preset.label)}
-              className="px-2.5 py-1 text-[11px] rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white transition-colors"
-            >
-              {preset.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-neutral-800 text-xs">
+          <label className="text-neutral-400" htmlFor="custom-timer-minutes">Длительность (минуты):</label>
+          <input
+            id="custom-timer-minutes"
+            type="number"
+            min="1"
+            max="600"
+            step="1"
+            value={customTimerMinutes}
+            onChange={(e) => setCustomTimerMinutes(e.target.value)}
+            placeholder="Введите минуты"
+            className="w-32 px-2.5 py-1.5 rounded bg-neutral-950 border border-neutral-800 text-neutral-100"
+          />
+          <button
+            type="button"
+            onClick={applyCustomTimer}
+            disabled={!customTimerMinutes || Number(customTimerMinutes) <= 0 || Number(customTimerMinutes) > 600}
+            className="px-3 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 border border-neutral-700"
+          >
+            Установить
+          </button>
         </div>
       </div>
 
@@ -392,19 +388,7 @@ export const ClassroomToolsTab: React.FC<ClassroomToolsTabProps> = ({
             )}
           </div>
 
-          <div className="space-y-1.5">
-            {PRESET_BANNERS.slice(0, 3).map((banner, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => sendBanner(banner.text, banner.level)}
-                className="w-full text-left px-2.5 py-1.5 rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 hover:text-white flex items-center justify-between transition-colors"
-              >
-                <span className="truncate">{banner.text}</span>
-                <span className="text-[10px] text-neutral-500 ml-1">Вывести</span>
-              </button>
-            ))}
-          </div>
+          <p className="text-neutral-500 text-[11px]">Готовых объявлений нет. Введите свой текст ниже.</p>
 
           {/* Custom Banner Input */}
           <div className="pt-2 border-t border-neutral-800 flex gap-2">
