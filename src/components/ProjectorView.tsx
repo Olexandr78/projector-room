@@ -138,6 +138,31 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     };
   }, [state.mode, state.activeVideo]);
 
+  // Re-apply playback commands when the play/pause state changes, independently
+  // from time-update events. This prevents a frequent time update from masking
+  // a pause command in the projector window.
+  useEffect(() => {
+    if (state.mode !== 'video' || !state.activeVideo || state.activeVideo.isYoutube) return;
+    const vid = videoRef.current;
+    if (!vid) return;
+
+    if (state.activeVideo.playing) {
+      if (vid.paused) vid.play().catch(() => {});
+    } else if (!vid.paused) {
+      vid.pause();
+    }
+    vid.volume = state.activeVideo.volume;
+    vid.muted = state.activeVideo.muted;
+    vid.playbackRate = state.activeVideo.playbackRate || 1.0;
+  }, [
+    state.mode,
+    state.activeVideo?.url,
+    state.activeVideo?.playing,
+    state.activeVideo?.volume,
+    state.activeVideo?.muted,
+    state.activeVideo?.playbackRate,
+  ]);
+
   // Auto-hide cursor logic
   useEffect(() => {
     const handleActivity = () => {
@@ -349,6 +374,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
               <div className="w-full h-full bg-neutral-900 flex items-center justify-center p-8">
                 {state.activePdf?.url ? (
                   <iframe
+                    key={`${state.activePdf.url}:${state.activePdf.currentPage}`}
                     src={`${state.activePdf.url}#toolbar=0&navpanes=0&page=${state.activePdf.currentPage || 1}`}
                     title="PDF Document"
                     className="w-full h-full border-none rounded-lg shadow-2xl bg-white"
