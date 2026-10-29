@@ -11,6 +11,7 @@ on:
       - "bun.lock"
       - "vite.config.ts"
       - "tsconfig.json"
+      - ".gitignore"
       - ".github/workflows/build-desktop-ui.yml"
   workflow_dispatch:
 
