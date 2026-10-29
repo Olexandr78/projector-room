@@ -23,74 +23,15 @@ CONFIG_PATH = os.path.join(DIR_PATH, "projector_config.json")
 REQUIREMENTS_PATH = os.path.join(DIR_PATH, "requirements.txt")
 MAIN_SCRIPT_PATH = os.path.join(DIR_PATH, "main.py")
 
-DEFAULT_CLASSES = [
-  {
-    "id": "class_7b",
-    "name": "7-Б класс (Информатика)",
-    "students": [
-      "Алексеев Даниил",
-      "Богданов Артем",
-      "Васильева Анна",
-      "Григорьев Максим",
-      "Дмитриева Дарья",
-      "Егоров Кирилл",
-      "Жукова Мария",
-      "Иванов Иван",
-      "Козлов Матвей",
-      "Лебедева София",
-      "Морозов Тимофей",
-      "Николаева Полина",
-      "Павлов Никита",
-      "Романов Ярослав",
-      "Смирнова Екатерина",
-      "Тарасов Владислав",
-      "Федорова Виктория",
-      "Шестаков Александр"
-    ]
-  },
-  {
-    "id": "class_9a",
-    "name": "9-А класс (Робототехника & Python)",
-    "students": [
-      "Антонов Сергей",
-      "Белов Илья",
-      "Воронина Ксения",
-      "Гусев Арсений",
-      "Захаров Марк",
-      "Кузнецов Егор",
-      "Макаров Роман",
-      "Новикова Алиса",
-      "Орлов Денис",
-      "Петров Петр",
-      "Семенова Вероника",
-      "Фомин Андрей"
-    ]
-  },
-  {
-    "id": "class_11m",
-    "name": "11-М класс (Профиль)",
-    "students": [
-      "Абрамов Глеб",
-      "Быкова Елизавета",
-      "Волков Михаил",
-      "Голубев Степан",
-      "Ильин Дмитрий",
-      "Ковалева Алена",
-      "Медведев Артем",
-      "Савельев Лев"
-    ]
-  }
-]
-
 DEFAULT_CONFIG = {
-  "room_name": "Кабинет информатики и робототехники №42",
-  "teacher_name": "Александр Сергеевич",
-  "school_name": "Школа №12",
+  "room_name": "",
+  "teacher_name": "",
+  "school_name": "",
   "aspect_ratio": "16:9",
-  "resolution_preset": "1920x1080 (Full HD)",
+  "resolution_preset": "",
   "screen_number": 1,
-  "active_class_id": "class_7b",
-  "classes": DEFAULT_CLASSES,
+  "active_class_id": "",
+  "classes": [],
   "projector_bounds": {
     "left_margin": 0,
     "right_margin": 0,
@@ -101,7 +42,7 @@ DEFAULT_CONFIG = {
     "offset_x": 0,
     "offset_y": 0,
     "aspect_ratio": "16:9",
-    "calibrated": True
+    "calibrated": False
   }
 }
 
