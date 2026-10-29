@@ -103,7 +103,9 @@ def install_python_libraries():
         subprocess.run(cmd, check=True)
         log("Все библиотеки успешно установлены!", "✔")
     except subprocess.CalledProcessError as e:
-        log(f"Ошибка при установке через pip: {e}. Попробуем продолжить...", "⚠")
+        log(f"Не удалось установить необходимые библиотеки: {e}", "✖")
+        return False
+    return True
 
 
 def initialize_config_and_classes():
@@ -168,9 +170,16 @@ Categories=Education;Utility;
 def launch_application():
     """Запуск основного приложения"""
     log("Запуск «Проекторная комната»...")
-    if os.path.exists(MAIN_SCRIPT_PATH):
+    if not os.path.isfile(MAIN_SCRIPT_PATH):
+        log(f"Не найден основной файл: {MAIN_SCRIPT_PATH}", "✖")
+        return False
+    try:
         subprocess.Popen([sys.executable, MAIN_SCRIPT_PATH], cwd=DIR_PATH)
-        log("Программа успешно запущена!", "✔")
+        log("Программа запущена.", "✔")
+        return True
+    except OSError as e:
+        log(f"Не удалось запустить приложение: {e}", "✖")
+        return False
 
 
 def main():
@@ -182,9 +191,11 @@ def main():
     enable_screen_extension()
 
     # 2. Устанавливаем библиотеки
-    install_python_libraries()
+    if not install_python_libraries():
+        log("Установка остановлена: исправьте ошибку установки библиотек и повторите запуск.", "✖")
+        return 1
 
-    # 3. Создаем конфигурацию, калибровку и классы
+    # 3. Создаем конфигурацию и параметры проектора
     initialize_config_and_classes()
 
     # 4. Создаем ярлык на рабочем столе
@@ -192,10 +203,12 @@ def main():
 
     # 5. Запуск
     print("-" * 60)
-    log("Установка и настройка завершена на 100%!", "★")
-    launch_application()
+    if not launch_application():
+        return 1
+    log("Установка и настройка завершена.", "★")
     print("=" * 60)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
