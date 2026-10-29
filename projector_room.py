@@ -912,7 +912,71 @@ def run_projector_webview():
         return True
 
 
+def launch_react_desktop_app():
+    """
+    Run the existing React/TypeScript website inside the desktop app.
+    The frontend is built into ./dist by installer.py (npm run build).
+    A local HTTP origin is used so localStorage and BroadcastChannel work
+    between the teacher console and the projector window.
+    """
+    dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
+    index_file = os.path.join(dist_dir, "index.html")
+    if not os.path.isfile(index_file):
+        return False
+
+    try:
+        import webview
+        from functools import partial
+        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+        class QuietHandler(SimpleHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+        handler = partial(QuietHandler, directory=dist_dir)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        app_url = "http://127.0.0.1:{}/".format(server.server_address[1])
+
+        webview.create_window(
+            "Проекторная комната",
+            url=app_url,
+            width=1360,
+            height=860,
+            min_size=(980, 620),
+            text_select=True,
+        )
+        try:
+            webview.start()
+        finally:
+            server.shutdown()
+            server.server_close()
+        return True
+    except ImportError:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Проекторная комната",
+            "Для запуска встроенного интерфейса не установлен pywebview. "
+            "Запустите установщик ещё раз."
+        )
+        root.destroy()
+        return True
+    except Exception as exc:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Ошибка запуска",
+            "Не удалось открыть интерфейс сайта внутри программы:\n{}".format(exc)
+        )
+        root.destroy()
+        return True
+
+
 if __name__ == "__main__":
-    if not run_projector_webview():
+    if run_projector_webview():
+        pass
+    elif not launch_react_desktop_app():
         app = TeacherConsole()
         app.mainloop()
