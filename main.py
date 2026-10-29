@@ -52,34 +52,13 @@ class ConfigManager:
     @staticmethod
     def default():
         return {
-            "room_name": "Кабинет информатики",
-            "teacher_name": "Александр Сергеевич",
-            "school_name": "Школа №12",
+            "room_name": "",
+            "teacher_name": "",
+            "school_name": "",
             "aspect_ratio": "16:9",
             "screen_number": 1,
-            "active_class_id": "class_7b",
-            "classes": [
-                {
-                    "id": "class_7b",
-                    "name": "7-Б класс (Информатика)",
-                    "students": [
-                        "Алексеев Даниил", "Богданов Артем", "Васильева Анна",
-                        "Григорьев Максим", "Дмитриева Дарья", "Егоров Кирилл",
-                        "Жукова Мария", "Иванов Иван", "Козлов Матвей",
-                        "Лебедева София", "Морозов Тимофей", "Николаева Полина",
-                        "Павлов Никита", "Романов Ярослав", "Смирнова Екатерина",
-                        "Тарасов Владислав", "Федорова Виктория", "Шестаков Александр"
-                    ]
-                },
-                {
-                    "id": "class_9a",
-                    "name": "9-А класс (Робототехника)",
-                    "students": [
-                        "Антонов Сергей", "Белов Илья", "Воронина Ксения",
-                        "Гусев Арсений", "Захаров Марк", "Кузнецов Егор"
-                    ]
-                }
-            ],
+            "active_class_id": "",
+            "classes": [],
             "projector_bounds": {
                 "left_margin": 0,
                 "right_margin": 0,
@@ -90,7 +69,7 @@ class ConfigManager:
                 "offset_x": 0,
                 "offset_y": 0,
                 "aspect_ratio": "16:9",
-                "calibrated": True
+                "calibrated": False
             }
         }
 
