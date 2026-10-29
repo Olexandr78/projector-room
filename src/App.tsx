@@ -144,7 +144,8 @@ export default function App() {
     });
   };
 
-  // Open separate projector window
+  // Open a separate projector window and, when supported by the browser,
+  // move it to the non-primary display. The browser may ask for screen permission.
   const handleOpenProjectorWindow = () => {
     const url = `${window.location.origin}${window.location.pathname}?mode=projector`;
     const newWindow = window.open(
@@ -152,20 +153,50 @@ export default function App() {
       'projector_screen_window',
       'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no'
     );
-    if (newWindow) {
-      projectorWindowRef.current = newWindow;
-      setIsProjectorWindowOpen(true);
-      setTimeout(() => {
-        if (broadcastChannelRef.current) {
-          broadcastChannelRef.current.postMessage({
-            type: 'STATE_UPDATE',
-            sender: 'teacher',
-            state: projectorState,
-            timestamp: Date.now(),
-          });
-        }
-      }, 500);
+    if (!newWindow) {
+      alert('Браузер заблокировал окно проектора. Разрешите всплывающие окна для этого приложения и повторите попытку.');
+      return;
     }
+
+    projectorWindowRef.current = newWindow;
+    setIsProjectorWindowOpen(true);
+
+    // Window Management API is experimental and requires a secure context and permission.
+    // Fallback: the teacher can drag the opened projector window onto the projector display.
+    const screenWindow = window as Window & {
+      getScreenDetails?: () => Promise<{
+        screens: Array<{
+          isPrimary: boolean;
+          availLeft: number;
+          availTop: number;
+          availWidth: number;
+          availHeight: number;
+        }>;
+      }>;
+    };
+    if (screenWindow.getScreenDetails) {
+      screenWindow.getScreenDetails().then((details) => {
+        const secondary = details.screens.find((screen) => !screen.isPrimary);
+        if (secondary && !newWindow.closed) {
+          newWindow.moveTo(secondary.availLeft, secondary.availTop);
+          newWindow.resizeTo(secondary.availWidth, secondary.availHeight);
+          newWindow.focus();
+        }
+      }).catch(() => {
+        // Permission denied or API unavailable: window stays movable manually.
+      });
+    }
+
+    setTimeout(() => {
+      if (broadcastChannelRef.current) {
+        broadcastChannelRef.current.postMessage({
+          type: 'STATE_UPDATE',
+          sender: 'teacher',
+          state: projectorState,
+          timestamp: Date.now(),
+        });
+      }
+    }, 500);
   };
 
   // Universal file opener handler (Intelligently detects type and routes to correct tab)
