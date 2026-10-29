@@ -913,15 +913,168 @@ def run_projector_webview():
 
 
 class DesktopWebviewApi:
-    """Python bridge used by the React interface in the packaged desktop app."""
+    """Python bridge for the React teacher console and projector windows."""
+    MAIN_WINDOW_TITLE = "Проекторная комната"
+    PROJECTOR_WINDOW_TITLE = "Экран проектора"
+    BROWSER_TITLES = {
+        "teacher": "ProjectorRoomTeacherBrowserSurface",
+        "projector": "ProjectorRoomProjectorBrowserSurface",
+    }
+
     def __init__(self, base_url):
         self.base_url = base_url
+        self.main_window = None
         self.projector_window = None
-        self.browser_window = None
+        self.teacher_browser_window = None
+        self.projector_browser_window = None
+        self.current_site_url = None
+        self.preview_bounds = (0, 0, 640, 360)
+        self._native_handles = {}
+
+    def _browser_window(self, kind):
+        return self.teacher_browser_window if kind == "teacher" else self.projector_browser_window
+
+    def _set_browser_window(self, kind, window):
+        if kind == "teacher":
+            self.teacher_browser_window = window
+        else:
+            self.projector_browser_window = window
+
+    def _windows_hwnd(self, title):
+        """Find a native window by its stable pywebview caption on Windows."""
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        user32.FindWindowW.restype = wintypes.HWND
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        return user32.FindWindowW(None, title)
+
+    def _attach_browser_surface(self, kind, attempt=0):
+        """Reparent a pywebview window as a real child of the teacher/projector WebView."""
+        if sys.platform != "win32":
+            return False
+        import ctypes
+        from ctypes import wintypes
+
+        title = self.BROWSER_TITLES[kind]
+        parent_title = self.MAIN_WINDOW_TITLE if kind == "teacher" else self.PROJECTOR_WINDOW_TITLE
+        child = self._native_handles.get(kind)
+        if not child or not ctypes.windll.user32.IsWindow(child):
+            child = self._windows_hwnd(title)
+        parent = self._windows_hwnd(parent_title)
+        if not child or not parent:
+            if attempt < 80:
+                timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
+                timer.daemon = True
+                timer.start()
+            return False
+
+        user32 = ctypes.windll.user32
+        GWL_STYLE = -16
+        WS_CHILD = 0x40000000
+        WS_POPUP = 0x80000000
+        WS_CAPTION = 0x00C00000
+        WS_THICKFRAME = 0x00040000
+        WS_SYSMENU = 0x00080000
+        WS_MINIMIZEBOX = 0x00020000
+        WS_MAXIMIZEBOX = 0x00010000
+        WS_CLIPSIBLINGS = 0x04000000
+        SWP_NOZORDER = 0x0004
+        SWP_FRAMECHANGED = 0x0020
+        SWP_SHOWWINDOW = 0x0040
+
+        get_long = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
+        set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+        get_long.restype = ctypes.c_ssize_t
+        get_long.argtypes = [wintypes.HWND, ctypes.c_int]
+        set_long.restype = ctypes.c_ssize_t
+        set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
+        user32.SetParent.restype = wintypes.HWND
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT
+        ]
+        user32.SetWindowPos.restype = wintypes.BOOL
+
+        style = get_long(child, GWL_STYLE)
+        style = (style & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU |
+                           WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_CHILD | WS_CLIPSIBLINGS
+        set_long(child, GWL_STYLE, style)
+        user32.SetParent(child, parent)
+        self._native_handles[kind] = child
+        self._position_browser_surface(kind)
+        user32.SetWindowPos(child, None, 0, 0, 1, 1,
+                            SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW)
+        self._position_browser_surface(kind)
+        return True
+
+    def _position_browser_surface(self, kind):
+        """Keep the native child WebView inside its corresponding HTML preview area."""
+        if sys.platform != "win32":
+            return False
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        child = self._native_handles.get(kind)
+        if not child or not user32.IsWindow(child):
+            return False
+        parent_title = self.MAIN_WINDOW_TITLE if kind == "teacher" else self.PROJECTOR_WINDOW_TITLE
+        parent = self._windows_hwnd(parent_title)
+        if not parent:
+            return False
+
+        if kind == "teacher":
+            left, top, width, height = self.preview_bounds
+        else:
+            class RECT(ctypes.Structure):
+                _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG),
+                            ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
+            rect = RECT()
+            user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+            user32.GetClientRect.restype = wintypes.BOOL
+            if not user32.GetClientRect(parent, ctypes.byref(rect)):
+                return False
+            left, top = 0, 0
+            width, height = rect.right - rect.left, rect.bottom - rect.top
+
+        if width < 1 or height < 1:
+            return False
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT
+        ]
+        user32.SetWindowPos.restype = wintypes.BOOL
+        SWP_NOZORDER = 0x0004
+        SWP_NOACTIVATE = 0x0010
+        SWP_SHOWWINDOW = 0x0040
+        return bool(user32.SetWindowPos(
+            child, None, int(left), int(top), int(width), int(height),
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+        ))
+
+    def set_browser_preview_bounds(self, left, top, width, height):
+        """Position the native browser surface over the Browser tab inside the teacher app."""
+        self.preview_bounds = tuple(int(round(value)) for value in (left, top, width, height))
+        if self.teacher_browser_window is not None:
+            self._position_browser_surface("teacher")
+        return True
+
+    def hide_browser_preview(self):
+        """Hide only the teacher-side surface when its tab is not visible."""
+        if self.teacher_browser_window is not None:
+            try:
+                self.teacher_browser_window.hide()
+            except Exception:
+                pass
+        return True
 
     def open_site(self, url):
-        """Navigate the existing projector WebView to a site (no iframe or extra window)."""
+        """Show a native WebView inside the teacher preview and mirror it on the projector."""
         from urllib.parse import urlparse
+        import webview
 
         url = str(url or "").strip()
         if not url:
@@ -931,15 +1084,46 @@ class DesktopWebviewApi:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise ValueError("Разрешены только адреса http:// и https://")
-        if self.projector_window is None:
-            raise RuntimeError("Сначала откройте окно проектора")
-        self.projector_window.load_url(url)
+
+        self.current_site_url = url
+        for kind in ("teacher", "projector"):
+            if kind == "projector" and self.projector_window is None:
+                continue
+            browser_window = self._browser_window(kind)
+            if browser_window is None:
+                title = self.BROWSER_TITLES[kind]
+                browser_window = webview.create_window(
+                    title, url=url,
+                    x=-32000, y=-32000, width=900, height=600,
+                    fullscreen=False, frameless=True, resizable=False, text_select=True,
+                )
+                self._set_browser_window(kind, browser_window)
+                try:
+                    browser_window.events.shown += lambda *args, k=kind: self._attach_browser_surface(k)
+                except Exception:
+                    pass
+                timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, 0))
+                timer.daemon = True
+                timer.start()
+            else:
+                try:
+                    browser_window.load_url(url)
+                    browser_window.show()
+                except Exception:
+                    self._set_browser_window(kind, None)
+                    self._native_handles.pop(kind, None)
+                    return self.open_site(url)
+            self._attach_browser_surface(kind)
         return True
 
     def close_site(self):
-        """Return the projector WebView to the lesson UI after leaving browser mode."""
-        if self.projector_window is not None:
-            self.projector_window.load_url(self.base_url + "?mode=projector")
+        """Hide browser surfaces without replacing either application's React page."""
+        for window in (self.teacher_browser_window, self.projector_browser_window):
+            if window is not None:
+                try:
+                    window.hide()
+                except Exception:
+                    pass
         return True
 
     def save_pdf(self, filename, base64_data):
@@ -964,6 +1148,8 @@ class DesktopWebviewApi:
         if self.projector_window is not None:
             try:
                 self.projector_window.show()
+                if self.current_site_url:
+                    self.open_site(self.current_site_url)
                 return True
             except Exception:
                 self.projector_window = None
@@ -984,7 +1170,7 @@ class DesktopWebviewApi:
             fullscreen = False
 
         self.projector_window = webview.create_window(
-            "Экран проектора",
+            self.PROJECTOR_WINDOW_TITLE,
             url=self.base_url + "?mode=projector",
             x=x,
             y=y,
@@ -995,8 +1181,15 @@ class DesktopWebviewApi:
             resizable=not fullscreen,
             text_select=True,
         )
+        if self.current_site_url:
+            timer = threading.Timer(0.3, self._ensure_projector_browser_surface)
+            timer.daemon = True
+            timer.start()
         return True
 
+    def _ensure_projector_browser_surface(self):
+        if self.current_site_url:
+            self.open_site(self.current_site_url)
 
 def launch_react_desktop_app():
     """
@@ -1026,8 +1219,8 @@ def launch_react_desktop_app():
         app_url = "http://127.0.0.1:{}/".format(server.server_address[1])
         desktop_api = DesktopWebviewApi(app_url)
 
-        webview.create_window(
-            "Проекторная комната",
+        main_window = webview.create_window(
+            DesktopWebviewApi.MAIN_WINDOW_TITLE,
             url=app_url,
             width=1360,
             height=860,
@@ -1035,6 +1228,7 @@ def launch_react_desktop_app():
             text_select=True,
             js_api=desktop_api,
         )
+        desktop_api.main_window = main_window
         try:
             webview.start()
         finally:
