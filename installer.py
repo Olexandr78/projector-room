@@ -124,39 +124,6 @@ def install_python_libraries():
     return True
 
 
-def build_frontend():
-    """Install and compile the existing React website for the desktop WebView."""
-    package_json = os.path.join(DIR_PATH, "package.json")
-    if not os.path.isfile(package_json):
-        log("Не найден package.json: исходный веб-интерфейс отсутствует.", "✖")
-        return False
-
-    npm = shutil.which("npm") or shutil.which("npm.cmd")
-    if not npm:
-        log("Для сборки встроенного интерфейса нужен Node.js с npm.", "✖")
-        log("Установите LTS-версию Node.js с https://nodejs.org/ и снова запустите установщик.", "ℹ")
-        return False
-
-    commands = [
-        [npm, "install", "--no-audit", "--no-fund", "--fetch-retries=5", "--fetch-timeout=120000"],
-        [npm, "run", "build"],
-    ]
-    for command in commands:
-        try:
-            log("Подготовка веб-интерфейса Projector Room: " + " ".join(command[1:]), "ℹ")
-            subprocess.run(command, cwd=DIR_PATH, check=True)
-        except (subprocess.CalledProcessError, OSError) as exc:
-            log("Не удалось собрать веб-интерфейс: {}".format(exc), "✖")
-            return False
-
-    built_index = os.path.join(DIR_PATH, "dist", "index.html")
-    if not os.path.isfile(built_index):
-        log("Сборка завершилась без dist/index.html.", "✖")
-        return False
-    log("Веб-интерфейс собран и готов к запуску в настольном окне.", "✔")
-    return True
-
-
 def initialize_config_and_classes():
     """Создание файла конфигурации с базой классов и калибровкой граней"""
     if not os.path.exists(CONFIG_PATH):
@@ -244,18 +211,13 @@ def main():
         log("Установка остановлена: исправьте ошибку установки библиотек и повторите запуск.", "✖")
         return 1
 
-    # 3. Собираем существующий React-интерфейс для настольного WebView
-    if not build_frontend():
-        log("Установка остановлена: сначала исправьте проблему со сборкой интерфейса.", "✖")
-        return 1
-
-    # 4. Создаем конфигурацию и параметры проектора
+    # 3. Создаем конфигурацию и параметры проектора
     initialize_config_and_classes()
 
-    # 5. Создаем ярлык на рабочем столе
+    # 4. Создаем ярлык на рабочем столе
     create_desktop_shortcut()
 
-    # 6. Запуск
+    # 5. Запуск
     print("-" * 60)
     if not launch_application():
         return 1
