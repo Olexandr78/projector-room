@@ -2,15 +2,12 @@ import React, { useState } from 'react';
 import { ProjectorState } from '../types';
 import {
   Globe,
-  ArrowLeft,
-  ArrowRight,
   RotateCw,
   Home,
   ExternalLink,
   ShieldCheck,
   ZoomIn,
-  ZoomOut,
-  Sparkles
+  ZoomOut
 } from 'lucide-react';
 
 interface BrowserTabProps {
@@ -104,7 +101,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
                 type="text"
                 value={inputUrl}
                 onChange={(e) => setInputUrl(e.target.value)}
-                placeholder="Введите адрес сайта: https://phet.colorado.edu, wikipedia.org, wokwi.com..."
+                placeholder="Введите адрес сайта, например example.com"
                 className="w-full px-3 py-1.5 pl-8 bg-neutral-950 border border-neutral-800 rounded-lg text-xs font-mono text-neutral-100 focus:outline-none focus:border-amber-500"
               />
               <Globe className="w-3.5 h-3.5 text-neutral-500 absolute left-2.5 top-2" />
