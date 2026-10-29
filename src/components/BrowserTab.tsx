@@ -10,12 +10,7 @@ import {
   ShieldCheck,
   ZoomIn,
   ZoomOut,
-  Sparkles,
-  Cpu,
-  Atom,
-  Code2,
-  BookOpen,
-  MapPin
+  Sparkles
 } from 'lucide-react';
 
 interface BrowserTabProps {
@@ -23,48 +18,10 @@ interface BrowserTabProps {
   onUpdateState: (partial: Partial<ProjectorState>) => void;
 }
 
-const EDUCATIONAL_PRESETS = [
-  {
-    name: 'Электрические цепи (PhET)',
-    category: 'Физика',
-    url: 'https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html',
-    icon: Atom,
-    description: 'Интерактивный конструктор батареек, лампочек и резисторов'
-  },
-  {
-    name: 'Wokwi ESP32 & Arduino',
-    category: 'Робототехника',
-    url: 'https://wokwi.com',
-    icon: Cpu,
-    description: 'Аппаратный онлайн-симулятор микроконтроллеров и датчиков'
-  },
-  {
-    name: 'Python Онлайн-компилятор',
-    category: 'Информатика',
-    url: 'https://trinket.io/python3',
-    icon: Code2,
-    description: 'Запуск и отладка кода Python прямо перед классом'
-  },
-  {
-    name: 'Википедия (Энциклопедия)',
-    category: 'Справка',
-    url: 'https://ru.wikipedia.org',
-    icon: BookOpen,
-    description: 'Поиск научных статей и определений'
-  },
-  {
-    name: 'Интерактивная карта мира',
-    category: 'География',
-    url: 'https://www.openstreetmap.org',
-    icon: MapPin,
-    description: 'Векторная мировая карта с масштабированием'
-  }
-];
-
 export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) => {
   const currentBrowser = state.activeBrowser || {
-    url: EDUCATIONAL_PRESETS[0].url,
-    title: EDUCATIONAL_PRESETS[0].name,
+    url: 'about:blank',
+    title: 'Пустая страница',
     zoom: 1.0,
   };
 
@@ -73,7 +30,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const normalizeUrl = (raw: string): string => {
     let clean = raw.trim();
-    if (!clean) return 'https://ru.wikipedia.org';
+    if (!clean) return 'about:blank';
     if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
       clean = 'https://' + clean;
     }
@@ -126,7 +83,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
             </button>
             <button
               type="button"
-              onClick={() => handleNavigate(EDUCATIONAL_PRESETS[0].url, EDUCATIONAL_PRESETS[0].name)}
+              onClick={() => handleNavigate('about:blank', 'Пустая страница')}
               className="p-1.5 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 transition-colors"
               title="Домашняя страница"
             >
@@ -185,30 +142,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
           </div>
         </div>
 
-        {/* Educational Presets Ribbon */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-neutral-800 text-xs">
-          <span className="text-neutral-500 text-[11px] mr-1">Быстрые симуляторы:</span>
-          {EDUCATIONAL_PRESETS.map((item, idx) => {
-            const Icon = item.icon;
-            const isCurrent = currentBrowser.url === item.url && state.mode === 'browser';
 
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleNavigate(item.url, item.name)}
-                className={`px-2.5 py-1 text-[11px] rounded flex items-center gap-1.5 transition-colors border ${
-                  isCurrent
-                    ? 'bg-amber-500 text-neutral-950 font-bold border-amber-400 shadow-sm'
-                    : 'bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border-neutral-800 hover:text-white'
-                }`}
-              >
-                <Icon className="w-3 h-3 shrink-0" />
-                <span>{item.name}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* 2. Privacy Indicator Notice */}
