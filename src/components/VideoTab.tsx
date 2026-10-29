@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import { ProjectorState, VideoItem } from '../types';
-import { SAMPLE_VIDEOS } from '../constants/presets';
 import {
   Play,
   Pause,
@@ -36,27 +35,6 @@ export function extractYouTubeId(url: string): string | null {
   return match && match[2].length === 11 ? match[2] : null;
 }
 
-const PRESET_YOUTUBE_VIDEOS = [
-  {
-    title: 'Как работает процессор компьютера (Анимация архитектуры)',
-    id: 'cNN_tTXABUA',
-    duration: '10:24',
-    category: 'Информатика'
-  },
-  {
-    title: 'Принцип работы электромагнитного двигателя и генератора',
-    id: 'CWulQ1ZSE3c',
-    duration: '06:15',
-    category: 'Физика & Железо'
-  },
-  {
-    title: 'Микроконтроллеры ESP32 и датчики для умного дома',
-    id: 'K_Lz7F4Z1wE',
-    duration: '08:40',
-    category: 'Робототехника'
-  }
-];
-
 export const VideoTab: React.FC<VideoTabProps> = ({
   state,
   onUpdateState,
@@ -68,7 +46,7 @@ export const VideoTab: React.FC<VideoTabProps> = ({
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
   const activeVid = state.activeVideo;
-  const allVideos = [...customVideos, ...SAMPLE_VIDEOS];
+  const allVideos = [...customVideos];
 
   const handleSelectVideo = (vid: VideoItem) => {
     onUpdateState({
@@ -113,19 +91,7 @@ export const VideoTab: React.FC<VideoTabProps> = ({
     setYoutubeUrlInput('');
   };
 
-  const handleSelectPresetYouTube = (item: typeof PRESET_YOUTUBE_VIDEOS[0]) => {
-    const embedUrl = `https://www.youtube-nocookie.com/embed/${item.id}?autoplay=1&enablejsapi=1&rel=0`;
-    const newVideo: VideoItem = {
-      id: `yt_${item.id}`,
-      title: item.title,
-      durationStr: item.duration,
-      url: embedUrl,
-      description: item.category,
-      isYoutube: true,
-      youtubeId: item.id,
-    };
-    handleSelectVideo(newVideo);
-  };
+
 
   const handleUploadVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -248,21 +214,7 @@ export const VideoTab: React.FC<VideoTabProps> = ({
           </div>
         )}
 
-        {/* Quick Recommended Educational YouTube Videos */}
-        <div className="pt-2 border-t border-neutral-800 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-neutral-500 text-[11px]">Готовые видеоуроки:</span>
-          {PRESET_YOUTUBE_VIDEOS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleSelectPresetYouTube(item)}
-              className="px-2.5 py-1 text-[11px] rounded bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 hover:text-white flex items-center gap-1.5 transition-colors"
-            >
-              <Youtube className="w-3 h-3 text-red-500 shrink-0" />
-              <span className="truncate max-w-[200px]">{item.title}</span>
-            </button>
-          ))}
-        </div>
+
       </div>
 
       {/* 2. Active Video Player & Controls */}
