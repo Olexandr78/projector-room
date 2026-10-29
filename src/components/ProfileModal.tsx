@@ -26,6 +26,7 @@ interface ProfileModalProps {
   onClose: () => void;
   config: RoomConfig;
   onSave: (newConfig: RoomConfig) => void;
+  onBoundsChange?: (bounds: ProjectorBounds) => void;
   onToggleCalibrationGrid?: (show: boolean) => void;
 }
 
@@ -34,6 +35,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onClose,
   config,
   onSave,
+  onBoundsChange,
   onToggleCalibrationGrid,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'profile' | 'bounds' | 'classes' | 'installer'>('profile');
@@ -149,6 +151,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const updateBound = (key: keyof ProjectorBounds, val: number | boolean | string) => {
     const next = { ...bounds, [key]: val };
     setBounds(next);
+    onBoundsChange?.(next);
     if (key === 'showCalibrationGrid' && onToggleCalibrationGrid) {
       onToggleCalibrationGrid(val as boolean);
     }
@@ -169,36 +172,19 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       calibrated: true,
     };
     setBounds(next);
+    onBoundsChange?.(next);
   };
 
   const fit16to9 = () => {
-    setBounds({
-      ...bounds,
-      aspectRatio: '16:9',
-      leftMargin: 0,
-      rightMargin: 0,
-      topMargin: 0,
-      bottomMargin: 0,
-      scaleX: 100,
-      scaleY: 100,
-      offsetX: 0,
-      offsetY: 0,
-    });
+    const next: ProjectorBounds = { ...bounds, aspectRatio: '16:9', leftMargin: 0, rightMargin: 0, topMargin: 0, bottomMargin: 0, scaleX: 100, scaleY: 100, offsetX: 0, offsetY: 0 };
+    setBounds(next);
+    onBoundsChange?.(next);
   };
 
   const fit4to3 = () => {
-    setBounds({
-      ...bounds,
-      aspectRatio: '4:3',
-      leftMargin: 12,
-      rightMargin: 12,
-      topMargin: 0,
-      bottomMargin: 0,
-      scaleX: 100,
-      scaleY: 100,
-      offsetX: 0,
-      offsetY: 0,
-    });
+    const next: ProjectorBounds = { ...bounds, aspectRatio: '4:3', leftMargin: 12, rightMargin: 12, topMargin: 0, bottomMargin: 0, scaleX: 100, scaleY: 100, offsetX: 0, offsetY: 0 };
+    setBounds(next);
+    onBoundsChange?.(next);
   };
 
   const handleExportConfig = () => {

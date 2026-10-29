@@ -238,7 +238,7 @@ export const PdfTab: React.FC<PdfTabProps> = ({ state, onUpdateState }) => {
           /* Custom User Uploaded PDF */
           <div className="w-full max-w-4xl h-[560px] bg-white rounded-lg shadow-2xl overflow-hidden">
             <iframe
-              src={`${customPdfUrl}#toolbar=0&navpanes=0`}
+              src={`${customPdfUrl}#toolbar=0&navpanes=0&page=${activePdf.currentPage || 1}`}
               title="Custom PDF Document"
               className="w-full h-full border-none"
             />

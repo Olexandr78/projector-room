@@ -63,12 +63,14 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
   const [isFullscreen, setIsFullscreen] = useState(false);
   const cursorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
 
   // Cross-window BroadcastChannel synchronization
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
     try {
       channel = new BroadcastChannel('projector_room_sync');
+      syncChannelRef.current = channel;
       channel.onmessage = (event: MessageEvent<SyncMessage>) => {
         if (event.data && event.data.type === 'STATE_UPDATE' && event.data.state) {
           setState((prev) => {
@@ -100,28 +102,40 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     }
 
     return () => {
+      syncChannelRef.current = null;
       channel?.close();
     };
   }, []);
 
-  // Video element playback synchronization
+  // Keep the real HTML video player synchronized with the teacher controls.
   useEffect(() => {
-    if (state.mode === 'video' && state.activeVideo && videoRef.current) {
-      const vid = videoRef.current;
-      if (state.activeVideo.playing && vid.paused) {
-        vid.play().catch(() => {});
-      } else if (!state.activeVideo.playing && !vid.paused) {
-        vid.pause();
-      }
-
-      if (Math.abs(vid.currentTime - state.activeVideo.currentTime) > 1.5) {
-        vid.currentTime = state.activeVideo.currentTime;
-      }
-
-      vid.volume = state.activeVideo.volume;
-      vid.muted = state.activeVideo.muted;
-      vid.playbackRate = state.activeVideo.playbackRate || 1.0;
+    if (state.mode !== 'video' || !state.activeVideo || !videoRef.current || state.activeVideo.isYoutube) return;
+    const vid = videoRef.current;
+    const publishTime = () => {
+      syncChannelRef.current?.postMessage({
+        type: 'VIDEO_TIME_UPDATE',
+        sender: 'projector',
+        currentTime: Number.isFinite(vid.currentTime) ? vid.currentTime : 0,
+        duration: Number.isFinite(vid.duration) ? vid.duration : 0,
+        timestamp: Date.now(),
+      } satisfies SyncMessage);
+    };
+    if (state.activeVideo.playing && vid.paused) vid.play().catch(() => {});
+    else if (!state.activeVideo.playing && !vid.paused) vid.pause();
+    if (vid.readyState >= 1 && Math.abs(vid.currentTime - state.activeVideo.currentTime) > 0.15) {
+      try { vid.currentTime = state.activeVideo.currentTime; } catch {}
     }
+    vid.volume = state.activeVideo.volume;
+    vid.muted = state.activeVideo.muted;
+    vid.playbackRate = state.activeVideo.playbackRate || 1.0;
+    vid.addEventListener('timeupdate', publishTime);
+    vid.addEventListener('loadedmetadata', publishTime);
+    vid.addEventListener('durationchange', publishTime);
+    return () => {
+      vid.removeEventListener('timeupdate', publishTime);
+      vid.removeEventListener('loadedmetadata', publishTime);
+      vid.removeEventListener('durationchange', publishTime);
+    };
   }, [state.mode, state.activeVideo]);
 
   // Auto-hide cursor logic
@@ -335,7 +349,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
               <div className="w-full h-full bg-neutral-900 flex items-center justify-center p-8">
                 {state.activePdf?.url ? (
                   <iframe
-                    src={`${state.activePdf.url}#toolbar=0&navpanes=0`}
+                    src={`${state.activePdf.url}#toolbar=0&navpanes=0&page=${state.activePdf.currentPage || 1}`}
                     title="PDF Document"
                     className="w-full h-full border-none rounded-lg shadow-2xl bg-white"
                   />

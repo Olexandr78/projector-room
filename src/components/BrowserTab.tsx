@@ -63,6 +63,10 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const handleNavigate = (targetUrl?: string, title?: string) => {
     const finalUrl = normalizeUrl(targetUrl || inputUrl);
+    const desktopApi = (window as Window & { pywebview?: { api?: { open_site?: (url: string) => Promise<unknown> } } }).pywebview?.api;
+    if (desktopApi?.open_site && /^https?:\/\//i.test(finalUrl)) {
+      desktopApi.open_site(finalUrl).catch((error) => alert(`Не удалось открыть сайт в окне проектора: ${String(error)}`));
+    }
     setInputUrl(finalUrl);
     setIframeKey((prev) => prev + 1);
 

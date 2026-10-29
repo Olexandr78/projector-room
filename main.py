@@ -917,6 +917,49 @@ class DesktopWebviewApi:
     def __init__(self, base_url):
         self.base_url = base_url
         self.projector_window = None
+        self.browser_window = None
+
+    def open_site(self, url):
+        """Open a site as a top-level WebView so X-Frame-Options/CSP do not block it."""
+        import webview
+        from urllib.parse import urlparse
+
+        url = str(url or "").strip()
+        if not url:
+            raise ValueError("Адрес сайта пустой")
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("Разрешены только адреса http:// и https://")
+        if self.browser_window is not None:
+            try:
+                self.browser_window.load_url(url)
+                self.browser_window.show()
+                return True
+            except Exception:
+                self.browser_window = None
+        displays = get_display_layout()
+        secondary = next((display for display in displays if not display.get("primary")), displays[1] if len(displays) > 1 else None)
+        if secondary:
+            x, y, width, height = secondary["x"], secondary["y"], secondary["width"], secondary["height"]
+            fullscreen = True
+        else:
+            x, y, width, height, fullscreen = 40, 40, 1280, 800, False
+        self.browser_window = webview.create_window(
+            "Проектор — веб-сайт", url=url, x=x, y=y, width=width, height=height,
+            fullscreen=fullscreen, frameless=fullscreen, resizable=not fullscreen, text_select=True,
+        )
+        return True
+
+    def close_site(self):
+        """Hide the standalone site window when another lesson mode is selected."""
+        if self.browser_window is not None:
+            try:
+                self.browser_window.hide()
+            except Exception:
+                pass
+        return True
 
     def open_projector(self):
         import webview

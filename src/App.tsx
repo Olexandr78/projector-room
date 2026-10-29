@@ -106,6 +106,19 @@ export default function App() {
       broadcastChannelRef.current = channel;
 
       channel.onmessage = (event: MessageEvent<SyncMessage>) => {
+        if (event.data?.type === 'VIDEO_TIME_UPDATE') {
+          const currentTime = Number(event.data.currentTime);
+          const duration = Number(event.data.duration);
+          if (Number.isFinite(currentTime) && currentTime >= 0) {
+            setProjectorState((prev) => {
+              if (!prev.activeVideo) return prev;
+              const nextDuration = Number.isFinite(duration) && duration > 0 ? duration : prev.activeVideo.duration;
+              if (Math.abs(prev.activeVideo.currentTime - currentTime) < 0.2 && Math.abs(prev.activeVideo.duration - nextDuration) < 0.5) return prev;
+              return { ...prev, activeVideo: { ...prev.activeVideo, currentTime, duration: nextDuration } };
+            });
+          }
+          return;
+        }
         if (event.data?.type === 'PROJECTOR_READY') {
           setIsProjectorWindowOpen(true);
           // Send current state immediately
@@ -126,6 +139,10 @@ export default function App() {
 
   // Sync state across windows whenever it changes
   const updateProjectorState = (partial: Partial<ProjectorState>) => {
+    if (partial.mode && partial.mode !== 'browser') {
+      const desktopApi = (window as Window & { pywebview?: { api?: { close_site?: () => Promise<unknown> } } }).pywebview?.api;
+      desktopApi?.close_site?.().catch(() => {});
+    }
     setProjectorState((prev) => {
       const next = { ...prev, ...partial, version: prev.version + 1 };
       // Broadcast to other windows
@@ -592,6 +609,7 @@ export default function App() {
         onClose={() => setIsProfileOpen(false)}
         config={config}
         onSave={handleSaveConfig}
+        onBoundsChange={(bounds) => updateProjectorState({ projectorBounds: bounds })}
         onToggleCalibrationGrid={(show) =>
           updateProjectorState({
             projectorBounds: {
