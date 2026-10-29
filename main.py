@@ -954,6 +954,8 @@ class DesktopWebviewApi:
                 pass
 
         user32 = ctypes.windll.user32
+        user32.IsWindow.argtypes = [wintypes.HWND]
+        user32.IsWindow.restype = wintypes.BOOL
         user32.FindWindowW.restype = wintypes.HWND
         user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
         found = user32.FindWindowW(None, fallback_title)
@@ -1130,6 +1132,7 @@ class DesktopWebviewApi:
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise ValueError("Разрешены только адреса http:// и https://")
 
+        same_url = url == self.current_site_url
         self.current_site_url = url
         for kind in ("teacher", "projector"):
             if kind == "projector" and self.projector_window is None:
@@ -1153,13 +1156,31 @@ class DesktopWebviewApi:
                 timer.start()
             else:
                 try:
-                    browser_window.load_url(url)
+                    if not same_url:
+                        browser_window.load_url(url)
                     browser_window.show()
                 except Exception:
+                    try:
+                        browser_window.destroy()
+                    except Exception:
+                        pass
                     self._set_browser_window(kind, None)
                     self._native_handles.pop(kind, None)
                     return self.open_site(url)
             self._attach_browser_surface(kind)
+        return True
+
+    def refresh_site(self):
+        """Reload the active address in both native browser surfaces."""
+        if not self.current_site_url:
+            return False
+        for browser_window in (self.teacher_browser_window, self.projector_browser_window):
+            if browser_window is not None:
+                try:
+                    browser_window.load_url(self.current_site_url)
+                    browser_window.show()
+                except Exception:
+                    pass
         return True
 
     def close_site(self):
