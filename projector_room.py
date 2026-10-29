@@ -17,6 +17,7 @@ import sys
 import json
 import time
 import threading
+import subprocess
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
@@ -254,6 +255,7 @@ class TeacherConsole(tk.Tk):
 
         # Окно проектора
         self.projector = None
+        self.webview_process = None
 
         # Состояния
         self.is_blackout = False
@@ -445,11 +447,11 @@ class TeacherConsole(tk.Tk):
                 vid_id = ""
 
             if vid_id and self.projector:
-                self.lbl_video_status.configure(text=f"YouTube [ID: {vid_id}] выведен на проектор!")
-                # В десктопном режиме открываем чистый полноэкранный плеер
-                import webbrowser
-                embed_url = f"https://www.youtube-nocookie.com/embed/{vid_id}?autoplay=1&rel=0"
-                webbrowser.open(embed_url)
+                embed_url = f"https://www.youtube-nocookie.com/embed/{vid_id}?autoplay=1&controls=1&rel=0&playsinline=1"
+                self.open_webview_url(embed_url)
+                self.lbl_video_status.configure(text=f"YouTube [ID: {vid_id}] открыт в окне проектора.")
+            elif not vid_id:
+                messagebox.showwarning("YouTube", "Не удалось распознать ID видео. Вставьте ссылку вида youtube.com/watch?v=... или youtu.be/...")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть YouTube видео: {e}")
 
@@ -573,23 +575,55 @@ class TeacherConsole(tk.Tk):
         btn_open_web = ttk.Button(url_frame, text="🌐 На проектор", command=self.open_web_on_projector)
         btn_open_web.pack(side=tk.RIGHT, pady=4)
 
-        lbl_sec = ttk.Label(tab, text="🔒 Изолированное окно: вкладки, история и мессенджеры учителя скрыты от учеников.", foreground="#10b981")
+        lbl_sec = ttk.Label(tab, text="🔒 Сайт открывается во встроенном окне проектора, без панели обычного браузера.", foreground="#10b981")
         lbl_sec.pack(anchor=tk.W, pady=8)
+        self.lbl_browser_status = ttk.Label(tab, text="Сайт не выбран.", foreground="#64748b")
+        self.lbl_browser_status.pack(anchor=tk.W, pady=4)
 
     def set_web_url(self, url):
         self.entry_web_url.delete(0, tk.END)
         self.entry_web_url.insert(0, url)
         self.open_web_on_projector()
 
+    def open_webview_url(self, url):
+        """Открыть сайт во встроенном WebView-окне без запуска обычного браузера."""
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        script_path = os.path.abspath(__file__)
+        display = self.projector.target_display if self.projector else None
+        if display:
+            x, y = display["x"], display["y"]
+            width, height = display["width"], display["height"]
+            fullscreen = "1"
+        else:
+            x, y, width, height = 40, 40, 800, 450
+            fullscreen = "0"
+
+        # Close the previous embedded web window so only one projector page remains.
+        if self.webview_process and self.webview_process.poll() is None:
+            self.webview_process.terminate()
+        args = [
+            sys.executable, script_path, "--projector-webview", url,
+            str(x), str(y), str(width), str(height), fullscreen,
+        ]
+        try:
+            self.webview_process = subprocess.Popen(
+                args, cwd=os.path.dirname(script_path)
+            )
+        except OSError as exc:
+            messagebox.showerror(
+                "Встроенный браузер",
+                f"Не удалось запустить окно сайта: {exc}\n"
+                "Проверьте, что установлена библиотека pywebview."
+            )
+
     def open_web_on_projector(self):
         url = self.entry_web_url.get().strip()
         if not url:
             return
-        if not url.startswith("http://") and not url.startswith("https://"):
-            url = "https://" + url
-        import webbrowser
-        webbrowser.open_new(url)
-        messagebox.showinfo("Браузер", f"Страница {url} открыта в изолированном окне проектора!")
+        self.open_webview_url(url)
+        self.lbl_browser_status.configure(text=f"Открыто в окне проектора: {url}")
 
     # --- Вкладка 6: Таймер и инструменты ---
     def create_tools_tab(self):
@@ -843,6 +877,42 @@ class FirstRunDialog(tk.Toplevel):
         self.destroy()
 
 
+def run_projector_webview():
+    """Child-process entry point for the standalone embedded WebView window."""
+    if len(sys.argv) < 8 or sys.argv[1] != "--projector-webview":
+        return False
+    try:
+        import webview
+        url = sys.argv[2]
+        x, y, width, height = map(int, sys.argv[3:7])
+        fullscreen = sys.argv[7] == "1"
+        webview.create_window(
+            "Экран проектора",
+            url=url,
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            fullscreen=fullscreen,
+            frameless=fullscreen,
+            resizable=not fullscreen,
+            text_select=True,
+        )
+        webview.start()
+        return True
+    except ImportError:
+        messagebox.showerror(
+            "Встроенный браузер",
+            "Не установлена библиотека pywebview. Выполните: "
+            "py -3.11 -m pip install pywebview"
+        )
+        return True
+    except Exception as exc:
+        messagebox.showerror("Встроенный браузер", f"Не удалось открыть сайт: {exc}")
+        return True
+
+
 if __name__ == "__main__":
-    app = TeacherConsole()
-    app.mainloop()
+    if not run_projector_webview():
+        app = TeacherConsole()
+        app.mainloop()
