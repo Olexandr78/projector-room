@@ -939,22 +939,51 @@ class DesktopWebviewApi:
                 return True
             except Exception:
                 self.browser_window = None
-        # Attach the web content as a child of the existing projector window.
-        # This keeps the website inside the projector surface instead of creating
-        # a separate top-level browser window or taskbar entry.
+        # Create the WebView surface, then reparent its native HWND into the
+        # existing projector window on Windows. pywebview itself does not expose
+        # a cross-platform parent-window argument.
         if self.projector_window is None:
             raise RuntimeError("Сначала откройте окно проектора")
-        try:
-            parent_width = int(self.projector_window.width)
-            parent_height = int(self.projector_window.height)
-        except Exception:
-            parent_width, parent_height = 1280, 720
+        displays = get_display_layout()
+        secondary = next((display for display in displays if not display.get("primary")), displays[1] if len(displays) > 1 else None)
+        if secondary:
+            x, y, width, height = secondary["x"], secondary["y"], secondary["width"], secondary["height"]
+        else:
+            x, y, width, height = 40, 40, 1280, 720
         self.browser_window = webview.create_window(
-            "Сайт проектора", url=url,
-            x=0, y=0, width=max(parent_width, 320), height=max(parent_height, 240),
-            parent=self.projector_window,
-            frameless=True, resizable=False, text_select=True,
+            "ProjectorRoomEmbeddedSite", url=url,
+            x=x, y=y, width=width, height=height,
+            fullscreen=False, frameless=True, resizable=False, text_select=True,
         )
+
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            hwnd_parent = user32.FindWindowW(None, "Экран проектора")
+            hwnd_child = user32.FindWindowW(None, "ProjectorRoomEmbeddedSite")
+            if not hwnd_parent or not hwnd_child:
+                self.browser_window = None
+                raise RuntimeError("Не удалось встроить WebView в окно проектора")
+            GWL_STYLE = -16
+            WS_CHILD = 0x40000000
+            WS_POPUP = 0x80000000
+            WS_CAPTION = 0x00C00000
+            WS_THICKFRAME = 0x00040000
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            get_long = user32.GetWindowLongPtrW
+            get_long.restype = ctypes.c_ssize_t
+            get_long.argtypes = [wintypes.HWND, ctypes.c_int]
+            set_long = user32.SetWindowLongPtrW
+            set_long.restype = ctypes.c_ssize_t
+            set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+            style = get_long(hwnd_child, GWL_STYLE)
+            style = (style & ~WS_POPUP & ~WS_CAPTION & ~WS_THICKFRAME) | WS_CHILD
+            set_long(hwnd_child, GWL_STYLE, style)
+            user32.SetParent(hwnd_child, hwnd_parent)
+            user32.SetWindowPos(hwnd_child, None, 0, 0, width, height, SWP_NOZORDER | SWP_FRAMECHANGED)
         return True
 
     def close_site(self):
