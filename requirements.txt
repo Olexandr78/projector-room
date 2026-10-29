@@ -1,6 +1,6 @@
 Pillow>=10.0.0
 python-vlc>=3.0.20123
-PyMuPDF>=1.23.0
+PyMuPDF>=1.23.0,<2.0
 comtypes>=1.2.0
 python-pptx>=0.6.21
 yt-dlp>=2023.12.30
