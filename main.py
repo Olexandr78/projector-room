@@ -912,6 +912,52 @@ def run_projector_webview():
         return True
 
 
+class DesktopWebviewApi:
+    """Python bridge used by the React interface in the packaged desktop app."""
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.projector_window = None
+
+    def open_projector(self):
+        import webview
+
+        if self.projector_window is not None:
+            try:
+                self.projector_window.show()
+                return True
+            except Exception:
+                self.projector_window = None
+
+        displays = get_display_layout()
+        secondary = next(
+            (display for display in displays if not display.get("primary")),
+            displays[1] if len(displays) > 1 else None,
+        )
+        if secondary:
+            x = secondary["x"]
+            y = secondary["y"]
+            width = secondary["width"]
+            height = secondary["height"]
+            fullscreen = True
+        else:
+            x, y, width, height = 40, 40, 1280, 720
+            fullscreen = False
+
+        self.projector_window = webview.create_window(
+            "Экран проектора",
+            url=self.base_url + "?mode=projector",
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            fullscreen=fullscreen,
+            frameless=fullscreen,
+            resizable=not fullscreen,
+            text_select=True,
+        )
+        return True
+
+
 def launch_react_desktop_app():
     """
     Run the existing React/TypeScript website inside the desktop app.
@@ -938,6 +984,7 @@ def launch_react_desktop_app():
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
         app_url = "http://127.0.0.1:{}/".format(server.server_address[1])
+        desktop_api = DesktopWebviewApi(app_url)
 
         webview.create_window(
             "Проекторная комната",
@@ -946,6 +993,7 @@ def launch_react_desktop_app():
             height=860,
             min_size=(980, 620),
             text_select=True,
+            js_api=desktop_api,
         )
         try:
             webview.start()
