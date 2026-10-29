@@ -973,6 +973,9 @@ class DesktopWebviewApi:
         child = self._native_handles.get(kind)
         if not child or not ctypes.windll.user32.IsWindow(child):
             child = self._native_hwnd(child_window, title)
+        if child:
+            # Save the handle immediately; the remote page may change its title later.
+            self._native_handles[kind] = child
         parent = self._native_hwnd(parent_window, parent_title)
         if not child or not parent:
             if attempt < 80:
@@ -1015,9 +1018,6 @@ class DesktopWebviewApi:
         set_long(child, GWL_STYLE, style)
         user32.SetParent(child, parent)
         self._native_handles[kind] = child
-        self._position_browser_surface(kind)
-        user32.SetWindowPos(child, None, 0, 0, 1, 1,
-                            SWP_NOZORDER | SWP_FRAMECHANGED)
         self._position_browser_surface(kind)
         return True
 
@@ -1062,9 +1062,10 @@ class DesktopWebviewApi:
         SWP_NOZORDER = 0x0004
         SWP_NOACTIVATE = 0x0010
         SWP_SHOWWINDOW = 0x0040
+        SWP_FRAMECHANGED = 0x0020
         return bool(user32.SetWindowPos(
             child, None, int(left), int(top), int(width), int(height),
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED
         ))
 
     def set_browser_preview_bounds(self, left, top, width, height):
