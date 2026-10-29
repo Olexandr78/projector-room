@@ -1068,6 +1068,38 @@ class DesktopWebviewApi:
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED
         ))
 
+    def _on_browser_loaded(self, kind):
+        """Mirror link navigation between the teacher preview and projector WebView."""
+        window = self._browser_window(kind)
+        if window is None:
+            return
+        try:
+            url = window.get_current_url()
+        except Exception:
+            return
+        if not url or not url.startswith(("http://", "https://")) or url == self.current_site_url:
+            return
+
+        self.current_site_url = url
+        for other_kind in ("teacher", "projector"):
+            if other_kind == kind:
+                continue
+            other_window = self._browser_window(other_kind)
+            if other_window is not None:
+                try:
+                    other_window.load_url(url)
+                except Exception:
+                    pass
+
+        # Keep the teacher address bar and shared projector state in step when a
+        # user follows a link inside either native WebView.
+        if self.main_window is not None:
+            try:
+                script = "window.dispatchEvent(new CustomEvent('projector-room-browser-navigate', {detail: " + json.dumps(url) + "}));"
+                self.main_window.evaluate_js(script)
+            except Exception:
+                pass
+
     def set_browser_preview_bounds(self, left, top, width, height):
         """Position the native browser surface over the Browser tab inside the teacher app."""
         self.preview_bounds = tuple(int(round(value)) for value in (left, top, width, height))
@@ -1113,6 +1145,7 @@ class DesktopWebviewApi:
                 self._set_browser_window(kind, browser_window)
                 try:
                     browser_window.events.shown += lambda *args, k=kind: self._attach_browser_surface(k)
+                    browser_window.events.loaded += lambda *args, k=kind: self._on_browser_loaded(k)
                 except Exception:
                     pass
                 timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, 0))
