@@ -209,9 +209,11 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
               <div className="absolute inset-0 flex items-center justify-center bg-black">
                 {state.activeVideo.isYoutube && state.activeVideo.youtubeId ? (
                   <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${state.activeVideo.youtubeId}?autoplay=1&mute=1&controls=0`}
-                    title="Live Monitor YouTube"
-                    className="w-full h-full border-none pointer-events-none"
+                    src={`https://www.youtube-nocookie.com/embed/${state.activeVideo.youtubeId}?autoplay=1&mute=1&controls=1&enablejsapi=1&rel=0`}
+                    title="Интерактивное превью YouTube на основном мониторе"
+                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                    allowFullScreen
+                    className="w-full h-full border-none"
                   />
                 ) : (
                   <video
