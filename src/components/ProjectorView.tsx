@@ -40,11 +40,11 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
         showCalibrationGrid: false,
         calibrated: true,
       },
-      activeClassId: config.activeClassId || 'class_7b',
+      activeClassId: config.activeClassId || '',
       activeImage: null,
       activeVideo: null,
       activeBrowser: null,
-      activePresentation: { id: 'esp32_python', currentSlideIndex: 0 },
+      activePresentation: { id: '', currentSlideIndex: 0 },
       activePdf: null,
       classroomAlert: null,
       timer: {
