@@ -59,8 +59,11 @@ def enable_screen_extension():
     if system == "Windows":
         try:
             log("Включение режима расширения экрана через displayswitch.exe /extend...")
-            subprocess.run(["displayswitch.exe", "/extend"], check=False)
-            log("Режим 'Расширить рабочий стол' успешно активирован!", "✔")
+            result = subprocess.run(["displayswitch.exe", "/extend"], check=False)
+            if result.returncode == 0:
+                log("Команда расширения экранов передана Windows.", "✔")
+            else:
+                log(f"Windows не подтвердила переключение экранов (код {result.returncode}).", "⚠")
         except Exception as e:
             log(f"Не удалось запустить displayswitch: {e}", "⚠")
     elif system == "Linux":
