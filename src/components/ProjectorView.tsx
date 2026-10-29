@@ -171,8 +171,12 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     }
   };
 
-  const activePres = SAMPLE_PRESENTATIONS.find((p) => p.id === state.activePresentation.id) || SAMPLE_PRESENTATIONS[0];
-  const activeSlide = activePres.slides[state.activePresentation.currentSlideIndex] || activePres.slides[0];
+  const activePres = SAMPLE_PRESENTATIONS.find((p) => p.id === state.activePresentation.id);
+  const activeSlide = activePres?.slides[state.activePresentation.currentSlideIndex] || {
+    id: 0,
+    title: 'Презентация не загружена',
+    teacherNote: '',
+  };
 
   const formatTimer = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -277,7 +281,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
                       <span>{activeSlide.keyConcept}</span>
                     </div>
                     <span className="text-sm font-mono text-neutral-500">
-                      Слайд {state.activePresentation.currentSlideIndex + 1} из {activePres.slides.length}
+                      Слайд {state.activePresentation.currentSlideIndex + 1} из {activePres?.slides.length ?? 0}
                     </span>
                   </div>
                 )}
