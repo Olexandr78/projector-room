@@ -42,11 +42,26 @@ export const VideoTab: React.FC<VideoTabProps> = ({
   onAddCustomVideo,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const youtubePreviewRef = useRef<HTMLIFrameElement>(null);
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
   const activeVid = state.activeVideo;
   const allVideos = [...customVideos];
+
+  const sendYouTubeCommand = (frame: HTMLIFrameElement | null, playing: boolean) => {
+    if (!frame?.contentWindow) return;
+    frame.contentWindow.postMessage(JSON.stringify({
+      event: 'command',
+      func: playing ? 'playVideo' : 'pauseVideo',
+      args: [],
+    }), 'https://www.youtube-nocookie.com');
+  };
+
+  React.useEffect(() => {
+    if (!activeVid?.isYoutube) return;
+    sendYouTubeCommand(youtubePreviewRef.current, activeVid.playing);
+  }, [activeVid?.isYoutube, activeVid?.youtubeId, activeVid?.playing]);
 
   const handleSelectVideo = (vid: VideoItem) => {
     onUpdateState({
@@ -259,15 +274,27 @@ export const VideoTab: React.FC<VideoTabProps> = ({
             <div className="space-y-3">
               <div className="aspect-video w-full max-w-2xl mx-auto rounded-lg overflow-hidden border border-neutral-800 bg-black shadow-lg">
                 <iframe
-                  src={`https://www.youtube-nocookie.com/embed/${activeVid.youtubeId}?autoplay=1&enablejsapi=1`}
+                  ref={youtubePreviewRef}
+                  src={`https://www.youtube-nocookie.com/embed/${activeVid.youtubeId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
                   title={activeVid.title}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
+                  onLoad={() => sendYouTubeCommand(youtubePreviewRef.current, activeVid.playing)}
                   className="w-full h-full border-none"
                 />
               </div>
-              <div className="text-center text-[11px] text-neutral-400">
-                Видео транслируется прямо на проектор в чистом режиме без рекламы и интерфейса браузера
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className="px-4 py-1.5 rounded bg-orange-500 hover:bg-orange-400 text-neutral-950 font-bold flex items-center gap-1.5 shadow-sm text-xs"
+                >
+                  {activeVid.playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                  <span>{activeVid.playing ? 'Пауза' : 'Продолжить'}</span>
+                </button>
+                <div className="text-center text-[11px] text-neutral-400">
+                  Управление воспроизведением YouTube
+                </div>
               </div>
             </div>
           ) : (
