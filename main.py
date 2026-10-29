@@ -940,15 +940,24 @@ class DesktopWebviewApi:
         else:
             self.projector_browser_window = window
 
-    def _windows_hwnd(self, title):
-        """Find a native window by its stable pywebview caption on Windows."""
+    def _native_hwnd(self, window, fallback_title):
+        """Read the HWND directly from pywebview's native WinForms window."""
         import ctypes
         from ctypes import wintypes
+
+        if window is not None:
+            try:
+                handle = int(window.native.Handle.ToInt64())
+                if handle and ctypes.windll.user32.IsWindow(handle):
+                    return handle
+            except Exception:
+                pass
 
         user32 = ctypes.windll.user32
         user32.FindWindowW.restype = wintypes.HWND
         user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-        return user32.FindWindowW(None, title)
+        found = user32.FindWindowW(None, fallback_title)
+        return int(found) if found else 0
 
     def _attach_browser_surface(self, kind, attempt=0):
         """Reparent a pywebview window as a real child of the teacher/projector WebView."""
@@ -958,11 +967,13 @@ class DesktopWebviewApi:
         from ctypes import wintypes
 
         title = self.BROWSER_TITLES[kind]
+        child_window = self._browser_window(kind)
+        parent_window = self.main_window if kind == "teacher" else self.projector_window
         parent_title = self.MAIN_WINDOW_TITLE if kind == "teacher" else self.PROJECTOR_WINDOW_TITLE
         child = self._native_handles.get(kind)
         if not child or not ctypes.windll.user32.IsWindow(child):
-            child = self._windows_hwnd(title)
-        parent = self._windows_hwnd(parent_title)
+            child = self._native_hwnd(child_window, title)
+        parent = self._native_hwnd(parent_window, parent_title)
         if not child or not parent:
             if attempt < 80:
                 timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
@@ -1006,7 +1017,7 @@ class DesktopWebviewApi:
         self._native_handles[kind] = child
         self._position_browser_surface(kind)
         user32.SetWindowPos(child, None, 0, 0, 1, 1,
-                            SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW)
+                            SWP_NOZORDER | SWP_FRAMECHANGED)
         self._position_browser_surface(kind)
         return True
 
@@ -1022,7 +1033,8 @@ class DesktopWebviewApi:
         if not child or not user32.IsWindow(child):
             return False
         parent_title = self.MAIN_WINDOW_TITLE if kind == "teacher" else self.PROJECTOR_WINDOW_TITLE
-        parent = self._windows_hwnd(parent_title)
+        parent_window = self.main_window if kind == "teacher" else self.projector_window
+        parent = self._native_hwnd(parent_window, parent_title)
         if not parent:
             return False
 
