@@ -77,11 +77,11 @@ export default function App() {
       showCalibrationGrid: false,
       calibrated: true,
     },
-    activeClassId: config.activeClassId || config.classes?.[0]?.id || 'class_7b',
+    activeClassId: config.activeClassId || config.classes?.[0]?.id || '',
     activeImage: null,
     activeVideo: null,
     activeBrowser: null,
-    activePresentation: { id: 'esp32_python', currentSlideIndex: 0 },
+    activePresentation: { id: '', currentSlideIndex: 0 },
     activePdf: null,
     classroomAlert: null,
     timer: {
@@ -236,7 +236,7 @@ export default function App() {
       updateProjectorState({
         mode: 'presentation',
         activePresentation: {
-          id: 'esp32_python',
+          id: '',
           currentSlideIndex: 0,
         },
       });
