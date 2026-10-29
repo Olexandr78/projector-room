@@ -104,17 +104,7 @@ export const PresentationTab: React.FC<PresentationTabProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-neutral-400">Колода слайдов:</span>
-              <select
-                value={selectedPresIndex}
-                onChange={(e) => handleSelectPresentation(Number(e.target.value))}
-                className="bg-neutral-950 border border-neutral-800 rounded-lg px-2.5 py-1 text-xs font-medium text-emerald-400 focus:outline-none focus:border-emerald-500"
-              >
-                {SAMPLE_PRESENTATIONS.map((p, idx) => (
-                  <option key={p.id} value={idx}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
+              <span className="text-xs text-neutral-400">Файл презентации не выбран</span>
             </div>
             <span className="text-xs text-neutral-400">
               {currentPresentation.subject} · {totalSlides} слайдов
