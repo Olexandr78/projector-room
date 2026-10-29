@@ -402,7 +402,7 @@ class TeacherConsole(tk.Tk):
 
         ttk.Label(yt_frame, text="Ссылка на YouTube:").pack(anchor=tk.W)
         self.entry_yt_url = ttk.Entry(yt_frame, width=50)
-        self.entry_yt_url.insert(0, "https://www.youtube.com/watch?v=cNN_tTXABUA")
+        self.entry_yt_url.insert(0, "")
         self.entry_yt_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6), pady=4)
 
         btn_yt = ttk.Button(yt_frame, text="▶ Запустить с YouTube", command=self.load_youtube)
