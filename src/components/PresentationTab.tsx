@@ -29,14 +29,23 @@ export const PresentationTab: React.FC<PresentationTabProps> = ({
   audioEnabled,
 }) => {
   const [selectedPresIndex, setSelectedPresIndex] = useState(0);
-  const currentPresentation: PresentationData = SAMPLE_PRESENTATIONS[selectedPresIndex] || SAMPLE_PRESENTATIONS[0];
+  const currentPresentation: PresentationData = SAMPLE_PRESENTATIONS[selectedPresIndex] || {
+    id: '',
+    title: '',
+    subject: 'Нет загруженной презентации',
+    slides: [],
+  };
 
   const currentSlideIndex = state.activePresentation.currentSlideIndex;
-  const currentSlide: SlideItem = currentPresentation.slides[currentSlideIndex] || currentPresentation.slides[0];
+  const currentSlide: SlideItem = currentPresentation.slides[currentSlideIndex] || {
+    id: 0,
+    title: 'Презентация не загружена',
+    teacherNote: 'Откройте файл презентации, чтобы начать показ.',
+  };
   const totalSlides = currentPresentation.slides.length;
 
   const goToSlide = (index: number) => {
-    if (index < 0 || index >= totalSlides) return;
+    if (!currentPresentation.id || index < 0 || index >= totalSlides) return;
     if (audioEnabled) {
       soundEffects.playSlideClick();
     }
@@ -54,6 +63,7 @@ export const PresentationTab: React.FC<PresentationTabProps> = ({
 
   // Switch presentation deck
   const handleSelectPresentation = (idx: number) => {
+    if (!SAMPLE_PRESENTATIONS[idx]) return;
     setSelectedPresIndex(idx);
     onUpdateState({
       mode: 'presentation',
