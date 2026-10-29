@@ -29,6 +29,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
   type DesktopBrowserApi = {
     open_site?: (url: string) => Promise<unknown>;
     close_site?: () => Promise<unknown>;
+    refresh_site?: () => Promise<unknown>;
     set_browser_preview_bounds?: (left: number, top: number, width: number, height: number) => Promise<unknown>;
     hide_browser_preview?: () => Promise<unknown>;
   };
@@ -160,7 +161,9 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const handleRefresh = () => {
     const api = desktopApi();
-    if (api?.open_site && /^https?:\/\//i.test(currentBrowser.url)) {
+    if (/^https?:\/\//i.test(currentBrowser.url) && api?.refresh_site) {
+      api.refresh_site().catch((error) => alert(`Не удалось обновить сайт: ${String(error)}`));
+    } else if (api?.open_site && /^https?:\/\//i.test(currentBrowser.url)) {
       api.open_site(currentBrowser.url).catch((error) => alert(`Не удалось обновить сайт: ${String(error)}`));
     } else {
       setIframeKey((prev) => prev + 1);
