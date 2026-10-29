@@ -30,7 +30,7 @@ export const ImageTab: React.FC<ImageTabProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeImg = state.activeImage;
-  const allImages = [...customImages, ...SAMPLE_IMAGES];
+  const allImages = [...customImages];
 
   const handleSelectImage = (img: ImageItem) => {
     onUpdateState({
