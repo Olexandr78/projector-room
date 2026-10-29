@@ -939,16 +939,21 @@ class DesktopWebviewApi:
                 return True
             except Exception:
                 self.browser_window = None
-        displays = get_display_layout()
-        secondary = next((display for display in displays if not display.get("primary")), displays[1] if len(displays) > 1 else None)
-        if secondary:
-            x, y, width, height = secondary["x"], secondary["y"], secondary["width"], secondary["height"]
-            fullscreen = True
-        else:
-            x, y, width, height, fullscreen = 40, 40, 1280, 800, False
+        # Attach the web content as a child of the existing projector window.
+        # This keeps the website inside the projector surface instead of creating
+        # a separate top-level browser window or taskbar entry.
+        if self.projector_window is None:
+            raise RuntimeError("Сначала откройте окно проектора")
+        try:
+            parent_width = int(self.projector_window.width)
+            parent_height = int(self.projector_window.height)
+        except Exception:
+            parent_width, parent_height = 1280, 720
         self.browser_window = webview.create_window(
-            "Проектор — веб-сайт", url=url, x=x, y=y, width=width, height=height,
-            fullscreen=fullscreen, frameless=fullscreen, resizable=not fullscreen, text_select=True,
+            "Сайт проектора", url=url,
+            x=0, y=0, width=max(parent_width, 320), height=max(parent_height, 240),
+            parent=self.projector_window,
+            frameless=True, resizable=False, text_select=True,
         )
         return True
 
