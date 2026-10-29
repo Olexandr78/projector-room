@@ -78,6 +78,25 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
     }
   }, [currentBrowser.url]);
 
+  // Update the address field and shared state when the user follows a link
+  // inside the native browser preview/projector WebView.
+  useEffect(() => {
+    const handleNativeNavigation = (event: Event) => {
+      const url = (event as CustomEvent<string>).detail;
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
+      setInputUrl(url);
+      setIframeKey((previous) => previous + 1);
+      if (url !== currentBrowser.url) {
+        onUpdateState({
+          mode: 'browser',
+          activeBrowser: { url, title: url, zoom: currentBrowser.zoom },
+        });
+      }
+    };
+    window.addEventListener('projector-room-browser-navigate', handleNativeNavigation);
+    return () => window.removeEventListener('projector-room-browser-navigate', handleNativeNavigation);
+  }, [currentBrowser.url, currentBrowser.zoom, onUpdateState]);
+
   const normalizeUrl = (raw: string): string => {
     let clean = raw.trim();
     if (!clean || clean === 'about:blank') return 'about:blank';
