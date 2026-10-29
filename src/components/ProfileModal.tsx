@@ -77,9 +77,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const updated: RoomConfig = {
-      roomName: roomName.trim() || 'Кабинет №1',
-      teacherName: teacherName.trim() || 'Преподаватель',
-      schoolName: schoolName.trim() || 'Школа',
+      roomName: roomName.trim(),
+      teacherName: teacherName.trim(),
+      schoolName: schoolName.trim(),
       aspectRatio,
       resolutionPreset,
       audioChimeEnabled,
