@@ -211,13 +211,20 @@ def main():
         log("Установка остановлена: исправьте ошибку установки библиотек и повторите запуск.", "✖")
         return 1
 
-    # 3. Создаем конфигурацию и параметры проектора
+    # 3. Verify the precompiled React interface is included; no Node.js is needed on the user's PC.
+    frontend_index = os.path.join(DIR_PATH, "dist", "index.html")
+    if not os.path.isfile(frontend_index):
+        log("Не найден готовый интерфейс dist/index.html.", "✖")
+        log("Не устанавливайте Node.js: скачайте свежий ZIP репозитория после завершения автоматической сборки интерфейса.", "ℹ")
+        return 1
+
+    # 4. Создаем конфигурацию и параметры проектора
     initialize_config_and_classes()
 
-    # 4. Создаем ярлык на рабочем столе
+    # 5. Создаем ярлык на рабочем столе
     create_desktop_shortcut()
 
-    # 5. Запуск
+    # 6. Запуск
     print("-" * 60)
     if not launch_application():
         return 1
