@@ -25,6 +25,9 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
   const [inputUrl, setInputUrl] = useState(currentBrowser.url);
   const [iframeKey, setIframeKey] = useState(1);
   const previewRef = useRef<HTMLDivElement>(null);
+  const [desktopApiReady, setDesktopApiReady] = useState(() =>
+    Boolean((window as Window & { pywebview?: { api?: unknown } }).pywebview?.api)
+  );
 
   type DesktopBrowserApi = {
     open_site?: (url: string) => Promise<unknown>;
@@ -36,9 +39,21 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const desktopApi = () => (window as Window & { pywebview?: { api?: DesktopBrowserApi } }).pywebview?.api;
 
+  // pywebview injects its JS API asynchronously. Wait for pywebviewready so we
+  // don't leave a blocked iframe in front of the native page preview.
+  useEffect(() => {
+    const detectDesktopApi = () => {
+      setDesktopApiReady(Boolean(desktopApi()));
+    };
+    window.addEventListener('pywebviewready', detectDesktopApi);
+    detectDesktopApi();
+    return () => window.removeEventListener('pywebviewready', detectDesktopApi);
+  }, []);
+
   // In the Windows desktop app, a native WebView is positioned directly over this
   // preview area. Unlike an iframe, it can display sites that forbid framing.
   useEffect(() => {
+    if (!desktopApiReady) return;
     const api = desktopApi();
     const host = previewRef.current;
     if (!api || !host || !api.set_browser_preview_bounds) return;
@@ -64,7 +79,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
       window.removeEventListener('scroll', updateBounds, true);
       void api.hide_browser_preview?.().catch(() => {});
     };
-  }, []);
+  }, [desktopApiReady]);
 
   // Re-open the selected address when returning to the Browser tab.
   useEffect(() => {
@@ -77,7 +92,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
     } else {
       api.close_site?.().catch(() => {});
     }
-  }, [currentBrowser.url]);
+  }, [currentBrowser.url, desktopApiReady]);
 
   // Update the address field and shared state when the user follows a link
   // inside the native browser preview/projector WebView.
@@ -285,7 +300,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
         id="projector-room-browser-preview"
         className="bg-white border border-neutral-800 rounded-lg h-[480px] relative overflow-hidden shadow-inner"
       >
-        {(window as Window & { pywebview?: { api?: DesktopBrowserApi } }).pywebview?.api ? (
+        {(desktopApiReady || Boolean(desktopApi())) ? (
           currentBrowser.url === 'about:blank' ? (
             <div className="absolute inset-0 bg-neutral-900 text-neutral-300 flex flex-col items-center justify-center p-8 text-center">
               <Globe className="w-12 h-12 text-amber-400 mb-4" />
