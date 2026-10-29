@@ -107,24 +107,46 @@ export const PdfTab: React.FC<PdfTabProps> = ({ state, onUpdateState }) => {
     url: undefined,
   };
 
-  const handleUploadPdf = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const url = URL.createObjectURL(file);
-    setCustomPdfUrl(url);
-    setCustomPdfName(file.name);
+    try {
+      let url: string;
+      const desktopApi = (window as Window & {
+        pywebview?: { api?: { save_pdf?: (filename: string, base64Data: string) => Promise<string> } };
+      }).pywebview?.api;
 
-    onUpdateState({
-      mode: 'pdf',
-      activePdf: {
-        id: `pdf_${Date.now()}`,
-        currentPage: 1,
-        totalPages: 10,
-        scale: 1.0,
-        url,
-      },
-    });
+      if (desktopApi?.save_pdf) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Не удалось прочитать PDF'));
+          reader.onerror = () => reject(new Error('Не удалось прочитать PDF'));
+          reader.readAsDataURL(file);
+        });
+        const base64Data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+        url = await desktopApi.save_pdf(file.name, base64Data);
+      } else {
+        url = URL.createObjectURL(file);
+      }
+
+      setCustomPdfUrl(url);
+      setCustomPdfName(file.name);
+      onUpdateState({
+        mode: 'pdf',
+        activePdf: {
+          id: `pdf_${Date.now()}`,
+          currentPage: 1,
+          totalPages: 10,
+          scale: 1.0,
+          url,
+        },
+      });
+    } catch (error) {
+      alert(`Не удалось загрузить PDF: ${String(error)}`);
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const changePage = (newPage: number) => {
@@ -238,6 +260,7 @@ export const PdfTab: React.FC<PdfTabProps> = ({ state, onUpdateState }) => {
           /* Custom User Uploaded PDF */
           <div className="w-full max-w-4xl h-[560px] bg-white rounded-lg shadow-2xl overflow-hidden">
             <iframe
+              key={`${customPdfUrl}:${activePdf.currentPage}`}
               src={`${customPdfUrl}#toolbar=0&navpanes=0&page=${activePdf.currentPage || 1}`}
               title="Custom PDF Document"
               className="w-full h-full border-none"
