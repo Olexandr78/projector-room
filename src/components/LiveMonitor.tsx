@@ -84,8 +84,12 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
   };
 
   // Determine current active presentation & slide
-  const activePres = SAMPLE_PRESENTATIONS.find((p) => p.id === state.activePresentation.id) || SAMPLE_PRESENTATIONS[0];
-  const activeSlide = activePres.slides[state.activePresentation.currentSlideIndex] || activePres.slides[0];
+  const activePres = SAMPLE_PRESENTATIONS.find((p) => p.id === state.activePresentation.id);
+  const activeSlide = activePres?.slides[state.activePresentation.currentSlideIndex] || {
+    id: 0,
+    title: 'Презентация не загружена',
+    teacherNote: '',
+  };
 
   const formatTimer = (seconds: number) => {
     const m = Math.floor(seconds / 60);
