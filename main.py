@@ -945,19 +945,20 @@ class DesktopWebviewApi:
         import ctypes
         from ctypes import wintypes
 
-        if window is not None:
-            try:
-                handle = int(window.native.Handle.ToInt64())
-                if handle and ctypes.windll.user32.IsWindow(handle):
-                    return handle
-            except Exception:
-                pass
-
         user32 = ctypes.windll.user32
         user32.IsWindow.argtypes = [wintypes.HWND]
         user32.IsWindow.restype = wintypes.BOOL
         user32.FindWindowW.restype = wintypes.HWND
         user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+
+        if window is not None:
+            try:
+                handle = int(window.native.Handle.ToInt64())
+                if handle and user32.IsWindow(handle):
+                    return handle
+            except Exception:
+                pass
+
         found = user32.FindWindowW(None, fallback_title)
         return int(found) if found else 0
 
