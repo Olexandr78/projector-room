@@ -28,10 +28,37 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
   const normalizeUrl = (raw: string): string => {
     let clean = raw.trim();
     if (!clean || clean === 'about:blank') return 'about:blank';
-    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-      clean = 'https://' + clean;
+    if (!/^https?:\/\//i.test(clean)) clean = 'https://' + clean;
+
+    try {
+      const parsed = new URL(clean);
+      const host = parsed.hostname.toLowerCase();
+      let videoId = '';
+      if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
+        videoId = parsed.pathname.split('/').filter(Boolean)[0] || '';
+      } else if (host === 'youtube.com' || host.endsWith('.youtube.com') ||
+                 host === 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com')) {
+        videoId = parsed.searchParams.get('v') || '';
+        if (!videoId) {
+          const match = parsed.pathname.match(/^\/(?:embed|shorts|live)\/([^/?]+)/);
+          if (match) videoId = match[1];
+        }
+      }
+
+      // YouTube watch pages reject being framed. Use the official embed endpoint instead.
+      if (videoId) {
+        const embed = new URL('https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId));
+        embed.searchParams.set('enablejsapi', '1');
+        embed.searchParams.set('controls', '1');
+        embed.searchParams.set('playsinline', '1');
+        embed.searchParams.set('rel', '0');
+        embed.searchParams.set('origin', window.location.origin);
+        return embed.toString();
+      }
+      return parsed.toString();
+    } catch {
+      return clean;
     }
-    return clean;
   };
 
   const handleNavigate = (targetUrl?: string, title?: string) => {
@@ -167,7 +194,9 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
           key={iframeKey}
           src={currentBrowser.url}
           title={currentBrowser.title}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+          allowFullScreen
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
           className="w-full h-full border-none rounded bg-white transition-transform"
           style={{
             transform: `scale(${currentBrowser.zoom})`,
