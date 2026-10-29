@@ -3,6 +3,7 @@ import { ProjectorState, RoomConfig, SyncMessage } from '../types';
 import { SAMPLE_PRESENTATIONS } from '../constants/presets';
 import {
   Clock,
+  FileText,
   Sparkles,
   Maximize,
   Minimize,
@@ -339,26 +340,12 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
                     className="w-full h-full border-none rounded-lg shadow-2xl bg-white"
                   />
                 ) : (
-                  <div className="w-full max-w-4xl bg-neutral-950 border border-neutral-700 rounded-xl p-10 text-neutral-100 shadow-2xl space-y-6">
-                    <div className="border-b border-neutral-800 pb-4 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-mono uppercase text-blue-400">
-                          Учебный документ · PDF
-                        </span>
-                        <h2 className="text-2xl font-bold mt-1">
-                          Лабораторная работа: Архитектура микроконтроллеров и шина I2C
-                        </h2>
-                      </div>
-                      <span className="text-sm font-mono text-neutral-400 bg-neutral-900 px-3 py-1 rounded border border-neutral-800">
-                        Стр. {state.activePdf?.currentPage || 1}
-                      </span>
-                    </div>
-                    <p className="text-base text-neutral-300 leading-relaxed">
-                      Подключение и инициализация шины данных I2C (SDA, SCL). Сканирование аппаратных адресов ведомых устройств на шине.
+                  <div className="w-full max-w-3xl rounded-xl border border-neutral-700 bg-neutral-950 p-10 text-center text-neutral-300">
+                    <FileText className="mx-auto mb-4 h-10 w-10 text-neutral-500" />
+                    <h2 className="text-2xl font-semibold text-white">PDF не выбран</h2>
+                    <p className="mt-2 text-sm text-neutral-400">
+                      Выберите собственный PDF-файл на панели учителя, чтобы вывести его на проектор.
                     </p>
-                    <div className="p-4 rounded-lg bg-neutral-900 border border-neutral-800 font-mono text-sm text-blue-300">
-                      <code>i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=400000)</code>
-                    </div>
                   </div>
                 )}
               </div>
