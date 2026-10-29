@@ -1026,5 +1026,11 @@ if __name__ == "__main__":
     if run_projector_webview():
         pass
     elif not launch_react_desktop_app():
-        app = TeacherConsole()
-        app.mainloop()
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Интерфейс ещё не собран",
+            "Не найден dist/index.html — готовый интерфейс сайта ещё не включён в эту копию программы. "
+            "Node.js на этом компьютере устанавливать не нужно. Скачайте свежий ZIP репозитория после завершения сборки интерфейса."
+        )
+        root.destroy()
