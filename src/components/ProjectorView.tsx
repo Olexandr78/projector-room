@@ -63,6 +63,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
   const [isFullscreen, setIsFullscreen] = useState(false);
   const cursorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const youtubeRef = useRef<HTMLIFrameElement>(null);
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
 
   // Cross-window BroadcastChannel synchronization
@@ -162,6 +163,19 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     state.activeVideo?.muted,
     state.activeVideo?.playbackRate,
   ]);
+
+  // YouTube's player must receive explicit IFrame API commands; changing React
+  // state alone does not pause a video inside a cross-origin iframe.
+  useEffect(() => {
+    if (state.mode !== 'video' || !state.activeVideo?.isYoutube) return;
+    const frame = youtubeRef.current;
+    if (!frame?.contentWindow) return;
+    frame.contentWindow.postMessage(JSON.stringify({
+      event: 'command',
+      func: state.activeVideo.playing ? 'playVideo' : 'pauseVideo',
+      args: [],
+    }), 'https://www.youtube-nocookie.com');
+  }, [state.mode, state.activeVideo?.isYoutube, state.activeVideo?.youtubeId, state.activeVideo?.playing]);
 
   // Auto-hide cursor logic
   useEffect(() => {
@@ -350,10 +364,21 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
               <div className="w-full h-full flex items-center justify-center bg-black">
                 {state.activeVideo.isYoutube && state.activeVideo.youtubeId ? (
                   <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${state.activeVideo.youtubeId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1`}
+                    ref={youtubeRef}
+                    src={`https://www.youtube-nocookie.com/embed/${state.activeVideo.youtubeId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&origin=${encodeURIComponent(window.location.origin)}`}
                     title={state.activeVideo.title}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
+                    onLoad={() => {
+                      const frame = youtubeRef.current;
+                      if (frame?.contentWindow) {
+                        frame.contentWindow.postMessage(JSON.stringify({
+                          event: 'command',
+                          func: state.activeVideo?.playing ? 'playVideo' : 'pauseVideo',
+                          args: [],
+                        }), 'https://www.youtube-nocookie.com');
+                      }
+                    }}
                     className="w-full h-full border-none"
                   />
                 ) : (
