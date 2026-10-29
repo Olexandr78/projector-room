@@ -473,24 +473,11 @@ class TeacherConsole(tk.Tk):
 
         ttk.Label(url_frame, text="Адрес сайта:").pack(anchor=tk.W)
         self.entry_web_url = ttk.Entry(url_frame, width=50)
-        self.entry_web_url.insert(0, "https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html")
+        self.entry_web_url.insert(0, "")
         self.entry_web_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6), pady=4)
 
         btn_open_web = ttk.Button(url_frame, text="🌐 На проектор", command=self.open_web_on_projector)
         btn_open_web.pack(side=tk.RIGHT, pady=4)
-
-        # Образовательные пресеты
-        presets_frame = ttk.LabelFrame(tab, text="Быстрые учебные сайты и симуляторы", padding=8)
-        presets_frame.pack(fill=tk.X, pady=6)
-
-        btn_phet = ttk.Button(presets_frame, text="⚡ PhET: Электрические цепи", command=lambda: self.set_web_url("https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html"))
-        btn_phet.pack(side=tk.LEFT, padx=3, pady=2)
-
-        btn_wokwi = ttk.Button(presets_frame, text="🤖 Wokwi: ESP32 Симулятор", command=lambda: self.set_web_url("https://wokwi.com"))
-        btn_wokwi.pack(side=tk.LEFT, padx=3, pady=2)
-
-        btn_wiki = ttk.Button(presets_frame, text="📖 Википедия", command=lambda: self.set_web_url("https://ru.wikipedia.org"))
-        btn_wiki.pack(side=tk.LEFT, padx=3, pady=2)
 
         lbl_sec = ttk.Label(tab, text="🔒 Изолированное окно: вкладки, история и мессенджеры учителя скрыты от учеников.", foreground="#10b981")
         lbl_sec.pack(anchor=tk.W, pady=8)
@@ -742,12 +729,10 @@ class FirstRunDialog(tk.Toplevel):
         ttk.Label(self, text="Введите название кабинета или проектора:").pack(pady=4)
 
         self.entry_room = ttk.Entry(self, width=35)
-        self.entry_room.insert(0, "Кабинет информатики")
         self.entry_room.pack(pady=6)
 
         ttk.Label(self, text="Преподаватель:").pack(pady=4)
         self.entry_teacher = ttk.Entry(self, width=35)
-        self.entry_teacher.insert(0, "Александр Сергеевич")
         self.entry_teacher.pack(pady=6)
 
         btn_save = ttk.Button(self, text="Сохранить и начать работу", command=self.save)
@@ -755,9 +740,9 @@ class FirstRunDialog(tk.Toplevel):
 
     def save(self):
         cfg = {
-            "room_name": self.entry_room.get().strip() or "Кабинет информатики",
-            "teacher_name": self.entry_teacher.get().strip() or "Преподаватель",
-            "school_name": "Школа",
+            "room_name": self.entry_room.get().strip(),
+            "teacher_name": self.entry_teacher.get().strip(),
+            "school_name": "",
             "aspect_ratio": "16:9"
         }
         ConfigManager.save(cfg)
