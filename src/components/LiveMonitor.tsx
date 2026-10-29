@@ -245,8 +245,11 @@ export const LiveMonitor: React.FC<LiveMonitorProps> = ({
               <div className="absolute inset-0 bg-white flex items-center justify-center overflow-hidden">
                 <iframe
                   src={state.activeBrowser.url}
-                  title="Monitor Browser"
-                  className="w-full h-full border-none pointer-events-none"
+                  title="Интерактивное превью сайта на основном мониторе"
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+                  allowFullScreen
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
+                  className="w-full h-full border-none"
                 />
               </div>
             )}
