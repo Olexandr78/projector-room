@@ -213,8 +213,6 @@ export const VideoTab: React.FC<VideoTabProps> = ({
             {youtubeError}
           </div>
         )}
-
-
       </div>
 
       {/* 2. Active Video Player & Controls */}
