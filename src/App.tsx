@@ -58,7 +58,14 @@ export default function App() {
   const [customVideos, setCustomVideos] = useState<VideoItem[]>([]);
 
   // 3. Projector Shared State
-  const [projectorState, setProjectorState] = useState<ProjectorState>({
+  const [projectorState, setProjectorState] = useState<ProjectorState>(() => {
+    if (isProjectorWindow) {
+      try {
+        const savedState = localStorage.getItem(STORAGE_KEY_STATE);
+        if (savedState) return JSON.parse(savedState) as ProjectorState;
+      } catch {}
+    }
+    return {
     version: 1,
     mode: 'presentation',
     isBlackout: false,
@@ -92,6 +99,7 @@ export default function App() {
       showOnProjector: true,
     },
     drawings: [],
+    };
   });
 
   // Projector window reference
