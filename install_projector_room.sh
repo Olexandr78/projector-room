@@ -1,35 +1,48 @@
 #!/usr/bin/env bash
-# Автоматический инсталлятор «Проекторная комната» для Linux / Raspberry Pi
+set -Eeuo pipefail
 
-set -e
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+trap 'status=$?; echo "[ERROR] Installer stopped at line $LINENO (exit $status)." >&2; exit "$status"' ERR
 
 echo "============================================================"
-echo "    АВТОМАТИЧЕСКИЙ ИНСТАЛЛЯТОР «ПРОЕКТОРНАЯ КОМНАТА»"
+echo "    PROJECTOR ROOM - INSTALLER"
 echo "============================================================"
 
-# 1. Режим расширения экранов через xrandr если доступен
-if command -v xrandr >/dev/null 2>&1; then
-    echo "[1/4] Настройка экранов через xrandr..."
-    CONNECTED_DISPLAYS=$(xrandr | grep " connected" | awk '{print $1}')
-    DISPLAY_COUNT=$(echo "$CONNECTED_DISPLAYS" | wc -l)
-    if [ "$DISPLAY_COUNT" -ge 2 ]; then
-        DISP1=$(echo "$CONNECTED_DISPLAYS" | head -n1)
-        DISP2=$(echo "$CONNECTED_DISPLAYS" | head -n2 | tail -n1)
-        echo "Включение расширения: $DISP2 справа от $DISP1"
-        xrandr --output "$DISP2" --auto --right-of "$DISP1" || true
-    fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "[ERROR] Python 3 is required. Install python3 and python3-venv, then retry." >&2
+    exit 1
+fi
+if [[ ! -f "$SCRIPT_DIR/installer.py" || ! -f "$SCRIPT_DIR/main.py" ]]; then
+    echo "[ERROR] installer.py or main.py is missing from $SCRIPT_DIR." >&2
+    exit 1
 fi
 
-# 2. Установка библиотек
-echo "[2/4] Установка библиотек Python..."
-python3 -m pip install -r requirements.txt || true
+echo "[1/3] Checking display configuration..."
+if command -v xrandr >/dev/null 2>&1; then
+    DISPLAY_LIST="$(xrandr --query | awk '/ connected/ {print $1}' || true)"
+    DISPLAY_COUNT="$(printf '%s\n' "$DISPLAY_LIST" | awk 'NF {n++} END {print n+0}')"
+    if [[ "$DISPLAY_COUNT" -ge 2 ]]; then
+        DISP1="$(printf '%s\n' "$DISPLAY_LIST" | sed -n '1p')"
+        DISP2="$(printf '%s\n' "$DISPLAY_LIST" | sed -n '2p')"
+        echo "Enabling extended display: $DISP2 to the right of $DISP1"
+        xrandr --output "$DISP2" --auto --right-of "$DISP1"
+    else
+        echo "Only one connected display detected; skipping display extension."
+    fi
+else
+    echo "xrandr is unavailable; skipping display extension."
+fi
 
-# 3. Инициализация конфига и ярлыков
-echo "[3/4] Инициализация конфигурации и классов..."
-python3 installer.py
+echo "[2/3] Creating local Python environment..."
+if [[ ! -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
+    python3 -m venv "$SCRIPT_DIR/.venv"
+fi
 
-# 4. Запуск
-echo "[4/4] Запуск приложения..."
-python3 main.py &
+echo "[3/3] Installing dependencies and launching..."
+"$SCRIPT_DIR/.venv/bin/python" -m pip install --upgrade pip
+"$SCRIPT_DIR/.venv/bin/python" -m pip install -r "$SCRIPT_DIR/requirements.txt"
+"$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/installer.py"
 
-echo "Готово!"
+echo "Installer finished."
