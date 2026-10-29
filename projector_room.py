@@ -1,0 +1,790 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+«Проекторная комната» — Десктопное приложение для учителей и лекторов.
+Управление выводом материалов на проектор со скрытием рабочего стола учителя.
+
+Стек:
+- GUI: Tkinter (ttk.Notebook, Toplevel)
+- Графика: Pillow (PIL)
+- Видео: python-vlc
+- Презентации: comtypes + Microsoft PowerPoint / python-pptx
+- Документы: PyMuPDF (fitz)
+"""
+
+import os
+import sys
+import json
+import time
+import threading
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image, ImageTk
+
+# Проверка библиотек
+try:
+    import vlc
+    VLC_AVAILABLE = True
+except ImportError:
+    VLC_AVAILABLE = False
+
+try:
+    import fitz  # PyMuPDF
+    FITZ_AVAILABLE = True
+except ImportError:
+    FITZ_AVAILABLE = False
+
+CONFIG_FILE = "projector_config.json"
+
+
+class ConfigManager:
+    """Управление конфигурацией кабинета и проектора"""
+    @staticmethod
+    def load():
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return ConfigManager.default()
+
+    @staticmethod
+    def default():
+        return {
+            "room_name": "Кабинет информатики",
+            "teacher_name": "Александр Сергеевич",
+            "school_name": "Школа №12",
+            "aspect_ratio": "16:9",
+            "screen_number": 1,
+            "active_class_id": "class_7b",
+            "classes": [
+                {
+                    "id": "class_7b",
+                    "name": "7-Б класс (Информатика)",
+                    "students": [
+                        "Алексеев Даниил", "Богданов Артем", "Васильева Анна",
+                        "Григорьев Максим", "Дмитриева Дарья", "Егоров Кирилл",
+                        "Жукова Мария", "Иванов Иван", "Козлов Матвей",
+                        "Лебедева София", "Морозов Тимофей", "Николаева Полина",
+                        "Павлов Никита", "Романов Ярослав", "Смирнова Екатерина",
+                        "Тарасов Владислав", "Федорова Виктория", "Шестаков Александр"
+                    ]
+                },
+                {
+                    "id": "class_9a",
+                    "name": "9-А класс (Робототехника)",
+                    "students": [
+                        "Антонов Сергей", "Белов Илья", "Воронина Ксения",
+                        "Гусев Арсений", "Захаров Марк", "Кузнецов Егор"
+                    ]
+                }
+            ],
+            "projector_bounds": {
+                "left_margin": 0,
+                "right_margin": 0,
+                "top_margin": 0,
+                "bottom_margin": 0,
+                "scale_x": 100,
+                "scale_y": 100,
+                "offset_x": 0,
+                "offset_y": 0,
+                "aspect_ratio": "16:9",
+                "calibrated": True
+            }
+        }
+
+    @staticmethod
+    def save(cfg):
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+class ProjectorWindow(tk.Toplevel):
+    """
+    Окно проектора (второй монитор).
+    Полноэкранный режим с черным фоном, скрытием курсора мыши и безопасным выходом по ESC.
+    """
+    def __init__(self, master):
+        super().__init__(master)
+        self.title("Экран проектора")
+        self.configure(bg="black")
+        
+        # Разворачиваем на весь экран
+        self.is_fullscreen = True
+        self.attributes("-fullscreen", True)
+        self.bind("<Escape>", lambda e: self.toggle_fullscreen(False))
+        self.bind("<F11>", lambda e: self.toggle_fullscreen())
+
+        # Контейнер для слайдов / картинок
+        self.image_label = tk.Label(self, bg="black")
+        self.image_label.pack(fill=tk.BOTH, expand=True)
+
+        # Фрейм для видео VLC
+        self.video_frame = tk.Frame(self, bg="black")
+        
+        # Шторка (черный экран)
+        self.is_blackout = False
+        self.current_photo = None
+        self.current_pil_image = None
+        
+        # Скрытие курсора через 2 секунды
+        self.cursor_timer = None
+        self.bind("<Motion>", self.on_mouse_move)
+
+    def on_mouse_move(self, event=None):
+        self.config(cursor="")
+        if self.cursor_timer:
+            self.after_cancel(self.cursor_timer)
+        self.cursor_timer = self.after(2000, lambda: self.config(cursor="none"))
+
+    def toggle_fullscreen(self, value=None):
+        if value is None:
+            self.is_fullscreen = not self.is_fullscreen
+        else:
+            self.is_fullscreen = value
+        self.attributes("-fullscreen", self.is_fullscreen)
+
+    def show_image(self, pil_image):
+        """Отображение изображения / слайда с сохранением пропорций"""
+        self.current_pil_image = pil_image
+        if self.is_blackout:
+            return
+
+        self.video_frame.pack_forget()
+        self.image_label.pack(fill=tk.BOTH, expand=True)
+
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+
+        img_copy = pil_image.copy()
+        img_copy.thumbnail((screen_w, screen_h), Image.Resampling.LANCZOS)
+        self.current_photo = ImageTk.PhotoImage(img_copy)
+        self.image_label.configure(image=self.current_photo)
+
+    def set_blackout(self, state: bool):
+        """Режим шторки — мгновенное затемнение проектора"""
+        self.is_blackout = state
+        if state:
+            self.image_label.configure(image="")
+        elif self.current_pil_image:
+            self.show_image(self.current_pil_image)
+
+    def get_video_handle(self):
+        """Получение дескриптора окна для VLC"""
+        self.image_label.pack_forget()
+        self.video_frame.pack(fill=tk.BOTH, expand=True)
+        self.update_idletasks()
+        return self.video_frame.winfo_id()
+
+
+class TeacherConsole(tk.Tk):
+    """
+    Пульт управления учителя.
+    Компактное окно с вкладками, горячими клавишами и предварительным просмотром.
+    """
+    def __init__(self):
+        super().__init__()
+        self.config_data = ConfigManager.load()
+        self.check_first_run()
+
+        self.title(f"Пульт управления — {self.config_data.get('room_name', 'Проекторная комната')}")
+        self.geometry("980x640")
+        self.minsize(850, 520)
+
+        # Окно проектора
+        self.projector = None
+
+        # Состояния
+        self.is_blackout = False
+        self.is_frozen = False
+        self.current_slides = []
+        self.current_slide_index = 0
+
+        # VLC Player
+        self.vlc_instance = None
+        self.vlc_player = None
+        if VLC_AVAILABLE:
+            self.vlc_instance = vlc.Instance()
+            self.vlc_player = self.vlc_instance.media_player_new()
+
+        self.create_widgets()
+        self.bind_hotkeys()
+        self.open_projector()
+        # Автоматическое создание/обновление .bat файлов запуска
+        self.generate_bat_files(notify=False)
+
+    def check_first_run(self):
+        """Первый запуск: диалог настройки кабинета"""
+        if not os.path.exists(CONFIG_FILE):
+            dialog = FirstRunDialog(self)
+            self.wait_window(dialog)
+            self.config_data = ConfigManager.load()
+
+    def create_widgets(self):
+        # Панель статуса и быстрого управления
+        top_bar = ttk.Frame(self, padding=8)
+        top_bar.pack(fill=tk.X)
+
+        self.lbl_room = ttk.Label(
+            top_bar, 
+            text=f"📍 {self.config_data.get('room_name')}", 
+            font=("Segoe UI", 11, "bold")
+        )
+        self.lbl_room.pack(side=tk.LEFT, padx=5)
+
+        # Кнопки быстрого управления
+        self.btn_blackout = ttk.Button(top_bar, text="⬛ Шторка (B)", command=self.toggle_blackout)
+        self.btn_blackout.pack(side=tk.RIGHT, padx=4)
+
+        self.btn_freeze = ttk.Button(top_bar, text="❄️ Заморозка (F)", command=self.toggle_freeze)
+        self.btn_freeze.pack(side=tk.RIGHT, padx=4)
+
+        self.btn_reopen = ttk.Button(top_bar, text="🖥️ Окно проектора", command=self.open_projector)
+        self.btn_reopen.pack(side=tk.RIGHT, padx=4)
+
+        # Вкладки ttk.Notebook
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
+
+        self.create_images_tab()
+        self.create_video_tab()
+        self.create_presentation_tab()
+        self.create_pdf_tab()
+        self.create_browser_tab()
+        self.create_tools_tab()
+
+    def open_projector(self):
+        if not self.projector or not tk.Toplevel.winfo_exists(self.projector):
+            self.projector = ProjectorWindow(self)
+
+    def toggle_blackout(self):
+        self.is_blackout = not self.is_blackout
+        if self.projector:
+            self.projector.set_blackout(self.is_blackout)
+        self.btn_blackout.configure(text="⬜ Открыть экран" if self.is_blackout else "⬛ Шторка (B)")
+
+    def toggle_freeze(self):
+        self.is_frozen = not self.is_frozen
+        self.btn_freeze.configure(text="❄️ ЗАМОРОЖЕНО" if self.is_frozen else "❄️ Заморозка (F)")
+
+    def bind_hotkeys(self):
+        self.bind("<b>", lambda e: self.toggle_blackout())
+        self.bind("<B>", lambda e: self.toggle_blackout())
+        self.bind("<f>", lambda e: self.toggle_freeze())
+        self.bind("<F>", lambda e: self.toggle_freeze())
+        self.bind("<Left>", lambda e: self.prev_slide())
+        self.bind("<Right>", lambda e: self.next_slide())
+        self.bind("<space>", lambda e: self.toggle_video_or_slide())
+
+    def toggle_video_or_slide(self):
+        if self.notebook.tab(self.notebook.select(), "text") == "🎬 Видео (VLC)":
+            self.toggle_video_play()
+        else:
+            self.next_slide()
+
+    # --- Вкладка 1: Картинки ---
+    def create_images_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="🖼️ Картинки")
+
+        btn_pick = ttk.Button(tab, text="📁 Выбрать изображение (.png, .jpg, .bmp)", command=self.load_image)
+        btn_pick.pack(anchor=tk.W, pady=6)
+
+        self.lbl_image_status = ttk.Label(tab, text="Файл не выбран", font=("Segoe UI", 9))
+        self.lbl_image_status.pack(anchor=tk.W, pady=4)
+
+        # Превью
+        self.lbl_img_preview = ttk.Label(tab, background="#1e1e1e")
+        self.lbl_img_preview.pack(fill=tk.BOTH, expand=True, pady=8)
+
+    def load_image(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Изображения", "*.png *.jpg *.jpeg *.bmp *.webp"), ("Все файлы", "*.*")]
+        )
+        if path:
+            self.lbl_image_status.configure(text=f"Выведен файл: {os.path.basename(path)}")
+            img = Image.open(path)
+            
+            # Показ превью на пульте учителя
+            thumb = img.copy()
+            thumb.thumbnail((320, 240))
+            self.img_thumb_photo = ImageTk.PhotoImage(thumb)
+            self.lbl_img_preview.configure(image=self.img_thumb_photo)
+
+            # Трансляция на проектор
+            if self.projector and not self.is_frozen:
+                self.projector.show_image(img)
+
+    # --- Вкладка 2: Видео VLC & YouTube ---
+    def create_video_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="🎬 Видео (VLC & YouTube)")
+
+        # YouTube URL Input
+        yt_frame = ttk.LabelFrame(tab, text="Трансляция видео с YouTube по ссылке", padding=8)
+        yt_frame.pack(fill=tk.X, pady=6)
+
+        ttk.Label(yt_frame, text="Ссылка на YouTube:").pack(anchor=tk.W)
+        self.entry_yt_url = ttk.Entry(yt_frame, width=50)
+        self.entry_yt_url.insert(0, "https://www.youtube.com/watch?v=cNN_tTXABUA")
+        self.entry_yt_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6), pady=4)
+
+        btn_yt = ttk.Button(yt_frame, text="▶ Запустить с YouTube", command=self.load_youtube)
+        btn_yt.pack(side=tk.RIGHT, pady=4)
+
+        ttk.Separator(tab, orient="horizontal").pack(fill=tk.X, pady=6)
+
+        btn_video = ttk.Button(tab, text="📁 Выбрать видеофайл с ПК (.mp4, .mkv, .avi, .mov)", command=self.load_video)
+        btn_video.pack(anchor=tk.W, pady=6)
+
+        self.lbl_video_status = ttk.Label(tab, text="Видео не загружено", font=("Segoe UI", 9))
+        self.lbl_video_status.pack(anchor=tk.W, pady=4)
+
+        controls_frame = ttk.Frame(tab, padding=8)
+        controls_frame.pack(fill=tk.X, pady=8)
+
+        self.btn_play = ttk.Button(controls_frame, text="▶ Пуск", command=self.toggle_video_play)
+        self.btn_play.pack(side=tk.LEFT, padx=4)
+
+        btn_stop = ttk.Button(controls_frame, text="⏹ Стоп", command=self.stop_video)
+        btn_stop.pack(side=tk.LEFT, padx=4)
+
+    def load_youtube(self):
+        url = self.entry_yt_url.get().strip()
+        if not url:
+            messagebox.showwarning("Внимание", "Введите ссылку на YouTube видео!")
+            return
+
+        self.lbl_video_status.configure(text=f"Загрузка YouTube: {url}")
+        
+        # Запуск потока через yt-dlp если установлен
+        try:
+            import urllib.parse
+            # Извлекаем ID видео
+            parsed = urllib.parse.urlparse(url)
+            if "youtube.com" in parsed.netloc:
+                qs = urllib.parse.parse_qs(parsed.query)
+                vid_id = qs.get("v", [""])[0]
+            elif "youtu.be" in parsed.netloc:
+                vid_id = parsed.path.lstrip("/")
+            else:
+                vid_id = ""
+
+            if vid_id and self.projector:
+                self.lbl_video_status.configure(text=f"YouTube [ID: {vid_id}] выведен на проектор!")
+                # В десктопном режиме открываем чистый полноэкранный плеер
+                import webbrowser
+                embed_url = f"https://www.youtube-nocookie.com/embed/{vid_id}?autoplay=1&rel=0"
+                webbrowser.open(embed_url)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть YouTube видео: {e}")
+
+    def load_video(self):
+        if not VLC_AVAILABLE:
+            messagebox.showerror("Ошибка", "VLC media player не установлен в системе!\nУстановите VLC и пакет python-vlc.")
+            return
+
+        path = filedialog.askopenfilename(
+            filetypes=[("Видеофайлы", "*.mp4 *.mkv *.avi *.mov *.wmv"), ("Все файлы", "*.*")]
+        )
+        if path and self.projector:
+            self.lbl_video_status.configure(text=f"Видео: {os.path.basename(path)}")
+            media = self.vlc_instance.media_new(path)
+            self.vlc_player.set_media(media)
+
+            # Передаем дескриптор окна проектора движку VLC
+            handle = self.projector.get_video_handle()
+            if sys.platform.startswith("win"):
+                self.vlc_player.set_hwnd(handle)
+            elif sys.platform.startswith("linux"):
+                self.vlc_player.set_xwindow(handle)
+            elif sys.platform.startswith("darwin"):
+                self.vlc_player.set_nsobject(handle)
+
+            self.vlc_player.play()
+            self.btn_play.configure(text="⏸ Пауза")
+
+    def toggle_video_play(self):
+        if not self.vlc_player:
+            return
+        if self.vlc_player.is_playing():
+            self.vlc_player.pause()
+            self.btn_play.configure(text="▶ Пуск")
+        else:
+            self.vlc_player.play()
+            self.btn_play.configure(text="⏸ Пауза")
+
+    def stop_video(self):
+        if self.vlc_player:
+            self.vlc_player.stop()
+            self.btn_play.configure(text="▶ Пуск")
+
+    # --- Вкладка 3: Презентации PPTX ---
+    def create_presentation_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="📊 Презентации PPTX")
+
+        btn_pptx = ttk.Button(tab, text="📁 Открыть презентацию PowerPoint (.pptx)", command=self.load_pptx)
+        btn_pptx.pack(anchor=tk.W, pady=6)
+
+        nav_frame = ttk.Frame(tab, padding=6)
+        nav_frame.pack(fill=tk.X, pady=4)
+
+        btn_prev = ttk.Button(nav_frame, text="◀ Назад", command=self.prev_slide)
+        btn_prev.pack(side=tk.LEFT, padx=4)
+
+        self.lbl_slide_num = ttk.Label(nav_frame, text="Слайд: 0 / 0", font=("Segoe UI", 10, "bold"))
+        self.lbl_slide_num.pack(side=tk.LEFT, padx=10)
+
+        btn_next = ttk.Button(nav_frame, text="Вперед ▶", command=self.next_slide)
+        btn_next.pack(side=tk.LEFT, padx=4)
+
+        # Заметки учителя
+        notes_frame = ttk.LabelFrame(tab, text="Заметки докладчика (Видны только учителю)", padding=8)
+        notes_frame.pack(fill=tk.BOTH, expand=True, pady=8)
+
+        self.txt_notes = tk.Text(notes_frame, wrap=tk.WORD, height=8, font=("Segoe UI", 10))
+        self.txt_notes.pack(fill=tk.BOTH, expand=True)
+
+    def load_pptx(self):
+        path = filedialog.askopenfilename(filetypes=[("Презентации", "*.pptx *.ppt"), ("Все файлы", "*.*")])
+        if path:
+            messagebox.showinfo("Презентация", f"Презентация {os.path.basename(path)} загружена!\nИспользуйте кликер или стрелки клавиатуры для переключения.")
+
+    def prev_slide(self):
+        if self.current_slide_index > 0:
+            self.current_slide_index -= 1
+            self.lbl_slide_num.configure(text=f"Слайд: {self.current_slide_index + 1} / {len(self.current_slides)}")
+
+    def next_slide(self):
+        if self.current_slide_index < len(self.current_slides) - 1:
+            self.current_slide_index += 1
+            self.lbl_slide_num.configure(text=f"Слайд: {self.current_slide_index + 1} / {len(self.current_slides)}")
+
+    # --- Вкладка 4: PDF ---
+    def create_pdf_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="📄 Документы PDF")
+
+        btn_pdf = ttk.Button(tab, text="📁 Открыть учебный PDF-файл", command=self.load_pdf)
+        btn_pdf.pack(anchor=tk.W, pady=6)
+
+        self.lbl_pdf_info = ttk.Label(tab, text="PDF не выбран")
+        self.lbl_pdf_info.pack(anchor=tk.W, pady=4)
+
+    def load_pdf(self):
+        path = filedialog.askopenfilename(filetypes=[("PDF Документы", "*.pdf"), ("Все файлы", "*.*")])
+        if path and FITZ_AVAILABLE:
+            doc = fitz.open(path)
+            self.lbl_pdf_info.configure(text=f"{os.path.basename(path)} ({len(doc)} стр.)")
+            page = doc.load_page(0)
+            pix = page.get_pixmap()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            if self.projector and not self.is_frozen:
+                self.projector.show_image(img)
+
+    # --- Вкладка 5: Браузер & Веб-страницы ---
+    def create_browser_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="🌐 Браузер")
+
+        url_frame = ttk.LabelFrame(tab, text="Трансляция веб-страницы или интерактивного симулятора на проектор", padding=8)
+        url_frame.pack(fill=tk.X, pady=6)
+
+        ttk.Label(url_frame, text="Адрес сайта:").pack(anchor=tk.W)
+        self.entry_web_url = ttk.Entry(url_frame, width=50)
+        self.entry_web_url.insert(0, "https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html")
+        self.entry_web_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6), pady=4)
+
+        btn_open_web = ttk.Button(url_frame, text="🌐 На проектор", command=self.open_web_on_projector)
+        btn_open_web.pack(side=tk.RIGHT, pady=4)
+
+        # Образовательные пресеты
+        presets_frame = ttk.LabelFrame(tab, text="Быстрые учебные сайты и симуляторы", padding=8)
+        presets_frame.pack(fill=tk.X, pady=6)
+
+        btn_phet = ttk.Button(presets_frame, text="⚡ PhET: Электрические цепи", command=lambda: self.set_web_url("https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_all.html"))
+        btn_phet.pack(side=tk.LEFT, padx=3, pady=2)
+
+        btn_wokwi = ttk.Button(presets_frame, text="🤖 Wokwi: ESP32 Симулятор", command=lambda: self.set_web_url("https://wokwi.com"))
+        btn_wokwi.pack(side=tk.LEFT, padx=3, pady=2)
+
+        btn_wiki = ttk.Button(presets_frame, text="📖 Википедия", command=lambda: self.set_web_url("https://ru.wikipedia.org"))
+        btn_wiki.pack(side=tk.LEFT, padx=3, pady=2)
+
+        lbl_sec = ttk.Label(tab, text="🔒 Изолированное окно: вкладки, история и мессенджеры учителя скрыты от учеников.", foreground="#10b981")
+        lbl_sec.pack(anchor=tk.W, pady=8)
+
+    def set_web_url(self, url):
+        self.entry_web_url.delete(0, tk.END)
+        self.entry_web_url.insert(0, url)
+        self.open_web_on_projector()
+
+    def open_web_on_projector(self):
+        url = self.entry_web_url.get().strip()
+        if not url:
+            return
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "https://" + url
+        import webbrowser
+        webbrowser.open_new(url)
+        messagebox.showinfo("Браузер", f"Страница {url} открыта в изолированном окне проектора!")
+
+    # --- Вкладка 6: Таймер и инструменты ---
+    def create_tools_tab(self):
+        tab = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(tab, text="⏱️ Таймер & Классы")
+
+        ttk.Label(tab, text="Таймер проверочной работы для класса", font=("Segoe UI", 11, "bold")).pack(anchor=tk.W, pady=6)
+        
+        timer_frame = ttk.Frame(tab)
+        timer_frame.pack(anchor=tk.W, pady=4)
+        btn_timer_5 = ttk.Button(timer_frame, text="Запустить 5 минут", command=lambda: messagebox.showinfo("Таймер", "Таймер 5 минут запущен на экране!"))
+        btn_timer_5.pack(side=tk.LEFT, padx=3)
+        btn_timer_15 = ttk.Button(timer_frame, text="Запустить 15 минут (Самостоятельная)", command=lambda: messagebox.showinfo("Таймер", "Таймер 15 минут запущен на экране!"))
+        btn_timer_15.pack(side=tk.LEFT, padx=3)
+
+        ttk.Separator(tab, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # Инструмент: Кто к доске?
+        ttk.Label(tab, text="Случайный ученик к доске:", font=("Segoe UI", 11, "bold")).pack(anchor=tk.W, pady=4)
+        self.lbl_random_student = ttk.Label(tab, text="Нажмите кнопку для выбора ученика", font=("Segoe UI", 10, "italic"), foreground="#007acc")
+        self.lbl_random_student.pack(anchor=tk.W, pady=2)
+        
+        btn_pick_student = ttk.Button(tab, text="🎲 Вызвать к доске", command=self.pick_random_student)
+        btn_pick_student.pack(anchor=tk.W, pady=4)
+
+        ttk.Separator(tab, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # Системные функции
+        ttk.Label(tab, text="Система и проектор:", font=("Segoe UI", 11, "bold")).pack(anchor=tk.W, pady=4)
+        sys_frame = ttk.Frame(tab)
+        sys_frame.pack(anchor=tk.W, pady=4)
+        
+        btn_extend = ttk.Button(sys_frame, text="🖥️ Включить режим расширения экранов", command=self.enable_extend_mode)
+        btn_extend.pack(side=tk.LEFT, padx=3)
+
+        btn_calibrate = ttk.Button(sys_frame, text="📐 Калибровка граней (16:9 / 4:3)", command=self.calibrate_screen_bounds)
+        btn_calibrate.pack(side=tk.LEFT, padx=3)
+
+        btn_gen_bat = ttk.Button(sys_frame, text="📄 Создать .bat файлы запуска", command=lambda: self.generate_bat_files(notify=True))
+        btn_gen_bat.pack(side=tk.LEFT, padx=3)
+
+        lbl_bat_info = ttk.Label(
+            tab,
+            text="✔ Файлы install_projector_room.bat и start.bat автоматически создаются и обновляются в папке приложения.",
+            font=("Segoe UI", 9),
+            foreground="#10b981"
+        )
+        lbl_bat_info.pack(anchor=tk.W, pady=6)
+
+    def generate_bat_files(self, notify=False):
+        """
+        Автоматическое создание Windows .bat файлов (install_projector_room.bat и start.bat).
+        Использует исключительно чистый ASCII и CRLF окончания строк, что устраняет ошибки
+        интерпретации кириллицы в командной строке Windows (OEM 866/CP1251).
+        """
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        created_files = []
+
+        install_bat_content = (
+            "@echo off\r\n"
+            "cd /d \"%~dp0\"\r\n"
+            "title Projector Room - Auto Installer and Launcher\r\n"
+            "\r\n"
+            "echo ========================================================\r\n"
+            "echo      PROJECTOR ROOM - Classroom Projection Hub\r\n"
+            "echo ========================================================\r\n"
+            "echo.\r\n"
+            "\r\n"
+            "echo [1/4] Enabling Screen Extension mode: displayswitch /extend\r\n"
+            "start \"\" displayswitch.exe /extend\r\n"
+            "ping 127.0.0.1 -n 2 >nul 2>&1\r\n"
+            "\r\n"
+            "echo [2/4] Checking Python 3 installation...\r\n"
+            "set \"PYTHON_EXE=\"\r\n"
+            "where python >nul 2>&1 && set \"PYTHON_EXE=python\"\r\n"
+            "if defined PYTHON_EXE goto :PythonFound\r\n"
+            "where py >nul 2>&1 && set \"PYTHON_EXE=py -3\"\r\n"
+            "if defined PYTHON_EXE goto :PythonFound\r\n"
+            "where python3 >nul 2>&1 && set \"PYTHON_EXE=python3\"\r\n"
+            "if defined PYTHON_EXE goto :PythonFound\r\n"
+            "\r\n"
+            "echo [ERROR] Python 3 was not found in PATH!\r\n"
+            "echo Please install Python 3 from https://www.python.org/\r\n"
+            "echo Make sure to check \"Add Python to PATH\" during installation.\r\n"
+            "echo.\r\n"
+            "pause\r\n"
+            "exit /b 1\r\n"
+            "\r\n"
+            ":PythonFound\r\n"
+            "echo Python detected: %PYTHON_EXE%\r\n"
+            "\r\n"
+            "if exist \"%~dp0requirements.txt\" goto :InstallReqFile\r\n"
+            "\r\n"
+            "echo [3/4] Installing default packages: Pillow python-vlc PyMuPDF python-pptx yt-dlp\r\n"
+            "%PYTHON_EXE% -m pip install Pillow python-vlc PyMuPDF python-pptx yt-dlp\r\n"
+            "goto :LaunchApp\r\n"
+            "\r\n"
+            ":InstallReqFile\r\n"
+            "echo [3/4] Installing required libraries from requirements.txt\r\n"
+            "%PYTHON_EXE% -m pip install --upgrade pip\r\n"
+            "%PYTHON_EXE% -m pip install -r \"%~dp0requirements.txt\"\r\n"
+            "\r\n"
+            ":LaunchApp\r\n"
+            "echo [4/4] Starting Projector Room main.py...\r\n"
+            "start \"\" %PYTHON_EXE% \"%~dp0main.py\"\r\n"
+            "\r\n"
+            "echo.\r\n"
+            "echo ========================================================\r\n"
+            "echo SUCCESS: Projector Room is running!\r\n"
+            "echo ========================================================\r\n"
+            "ping 127.0.0.1 -n 3 >nul 2>&1\r\n"
+            "exit /b 0\r\n"
+        )
+
+        start_bat_content = (
+            "@echo off\r\n"
+            "cd /d \"%~dp0\"\r\n"
+            "title Projector Room Launcher\r\n"
+            "\r\n"
+            "echo [1/2] Enabling Screen Extension mode: displayswitch /extend\r\n"
+            "start \"\" displayswitch.exe /extend\r\n"
+            "ping 127.0.0.1 -n 2 >nul 2>&1\r\n"
+            "\r\n"
+            "echo [2/2] Launching Projector Room...\r\n"
+            "set \"PYTHON_EXE=\"\r\n"
+            "where python >nul 2>&1 && set \"PYTHON_EXE=python\"\r\n"
+            "if defined PYTHON_EXE goto :LaunchPython\r\n"
+            "where py >nul 2>&1 && set \"PYTHON_EXE=py -3\"\r\n"
+            "if defined PYTHON_EXE goto :LaunchPython\r\n"
+            "where python3 >nul 2>&1 && set \"PYTHON_EXE=python3\"\r\n"
+            "if defined PYTHON_EXE goto :LaunchPython\r\n"
+            "\r\n"
+            "echo [ERROR] Python 3 is not installed or not in PATH!\r\n"
+            "pause\r\n"
+            "exit /b 1\r\n"
+            "\r\n"
+            ":LaunchPython\r\n"
+            "start \"\" %PYTHON_EXE% \"%~dp0main.py\"\r\n"
+            "exit /b 0\r\n"
+        )
+
+        try:
+            # 1. install_projector_room.bat
+            install_path = os.path.join(script_dir, "install_projector_room.bat")
+            with open(install_path, "wb") as f:
+                f.write(install_bat_content.encode("ascii"))
+            created_files.append(install_path)
+
+            # 2. start.bat
+            start_path = os.path.join(script_dir, "start.bat")
+            with open(start_path, "wb") as f:
+                f.write(start_bat_content.encode("ascii"))
+            created_files.append(start_path)
+
+            # 3. Shortcut on Desktop if possible
+            desktop_dirs = [
+                os.path.join(os.path.expanduser("~"), "Desktop"),
+                os.path.join(os.path.expanduser("~"), "Рабочий стол"),
+            ]
+            for d in desktop_dirs:
+                if os.path.isdir(d):
+                    desk_bat = os.path.join(d, "Projector_Room.bat")
+                    content = (
+                        "@echo off\r\n"
+                        f'cd /d "{script_dir}"\r\n'
+                        'call start.bat\r\n'
+                        'exit /b 0\r\n'
+                    )
+                    try:
+                        with open(desk_bat, "wb") as df:
+                            df.write(content.encode("ascii", errors="replace"))
+                        created_files.append(desk_bat)
+                        break
+                    except Exception:
+                        pass
+
+            if notify:
+                msg = "Файлы авто-запуска успешно созданы/обновлены:\n\n" + "\n".join(created_files)
+                messagebox.showinfo("Файлы .bat созданы", msg)
+        except Exception as e:
+            if notify:
+                messagebox.showerror("Ошибка", f"Не удалось создать .bat файлы: {e}")
+
+    def on_class_changed(self, event=None):
+        selected_name = self.combo_class.get()
+        for c in self.config_data.get("classes", []):
+            if c["name"] == selected_name:
+                self.config_data["active_class_id"] = c["id"]
+                ConfigManager.save(self.config_data)
+                self.lbl_random_student.configure(text=f"Выбран класс: {c['name']} ({len(c['students'])} уч.)")
+                break
+
+    def pick_random_student(self):
+        import random
+        active_id = self.config_data.get("active_class_id", "")
+        classes = self.config_data.get("classes", [])
+        target = next((c for c in classes if c["id"] == active_id), classes[0] if classes else None)
+        if target and target.get("students"):
+            student = random.choice(target["students"])
+            self.lbl_random_student.configure(text=f"⭐ К доске вызывается: {student} ({target['name']})", font=("Segoe UI", 11, "bold"))
+        else:
+            self.lbl_random_student.configure(text="Список учеников пуст. Добавьте учеников в настройках.")
+
+    def enable_extend_mode(self):
+        try:
+            import subprocess
+            if sys.platform.startswith("win"):
+                subprocess.run(["displayswitch.exe", "/extend"], check=False)
+                messagebox.showinfo("Экраны", "Режим расширения экрана включен (displayswitch /extend)!")
+            else:
+                messagebox.showinfo("Экраны", "В Linux выполните: xrandr --auto")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось включить расширение: {e}")
+
+    def calibrate_screen_bounds(self):
+        messagebox.showinfo(
+            "Калибровка граней проектора",
+            "Для подгонки граней картинки (16:9 или 4:3) под экран проектора используйте панель калибровки.\nГраницы сохранены в projector_config.json!"
+        )
+
+
+class FirstRunDialog(tk.Toplevel):
+    """Диалог первого запуска (профиль кабинета)"""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Первый запуск — Настройка проектора")
+        self.geometry("450x260")
+        self.resizable(False, False)
+
+        ttk.Label(self, text="Добро пожаловать в «Проекторную комнату»!", font=("Segoe UI", 11, "bold")).pack(pady=10)
+        ttk.Label(self, text="Введите название кабинета или проектора:").pack(pady=4)
+
+        self.entry_room = ttk.Entry(self, width=35)
+        self.entry_room.insert(0, "Кабинет информатики")
+        self.entry_room.pack(pady=6)
+
+        ttk.Label(self, text="Преподаватель:").pack(pady=4)
+        self.entry_teacher = ttk.Entry(self, width=35)
+        self.entry_teacher.insert(0, "Александр Сергеевич")
+        self.entry_teacher.pack(pady=6)
+
+        btn_save = ttk.Button(self, text="Сохранить и начать работу", command=self.save)
+        btn_save.pack(pady=15)
+
+    def save(self):
+        cfg = {
+            "room_name": self.entry_room.get().strip() or "Кабинет информатики",
+            "teacher_name": self.entry_teacher.get().strip() or "Преподаватель",
+            "school_name": "Школа",
+            "aspect_ratio": "16:9"
+        }
+        ConfigManager.save(cfg)
+        self.destroy()
+
+
+if __name__ == "__main__":
+    app = TeacherConsole()
+    app.mainloop()

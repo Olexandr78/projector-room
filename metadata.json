@@ -1,0 +1,6 @@
+{
+  "name": "Проекторная комната",
+  "description": "Двухэкранный пульт управления для учителей и лекторов: вывод презентаций, PDF, видео и картинок на проектор без лишних вкладок и личного рабочего стола.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
