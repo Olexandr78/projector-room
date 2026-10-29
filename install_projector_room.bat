@@ -1,17 +1,14 @@
 @echo off
+setlocal
 cd /d "%~dp0"
-title Projector Room - Auto Installer and Launcher
+title Projector Room Installer
 
 echo ========================================================
-echo      PROJECTOR ROOM - Classroom Projection Hub
+echo      PROJECTOR ROOM - INSTALLER
 echo ========================================================
 echo.
 
-echo [1/4] Enabling Screen Extension mode: displayswitch /extend
-start "" displayswitch.exe /extend
-ping 127.0.0.1 -n 2 >nul 2>&1
-
-echo [2/4] Checking Python 3 installation...
+echo [1/3] Checking Python 3...
 set "PYTHON_EXE="
 where python >nul 2>&1 && set "PYTHON_EXE=python"
 if defined PYTHON_EXE goto :PythonFound
@@ -20,34 +17,44 @@ if defined PYTHON_EXE goto :PythonFound
 where python3 >nul 2>&1 && set "PYTHON_EXE=python3"
 if defined PYTHON_EXE goto :PythonFound
 
-echo [ERROR] Python 3 was not found in PATH!
-echo Please install Python 3 from https://www.python.org/
-echo Make sure to check "Add Python to PATH" during installation.
-echo.
+echo [ERROR] Python 3 was not found.
+echo Install Python from https://www.python.org/ and enable "Add Python to PATH".
 pause
 exit /b 1
 
 :PythonFound
-echo Python detected: %PYTHON_EXE%
-
-if exist "%~dp0requirements.txt" goto :InstallReqFile
-
-echo [3/4] Installing default packages: Pillow python-vlc PyMuPDF python-pptx yt-dlp
-%PYTHON_EXE% -m pip install Pillow python-vlc PyMuPDF python-pptx yt-dlp
-goto :LaunchApp
-
-:InstallReqFile
-echo [3/4] Installing required libraries from requirements.txt
-%PYTHON_EXE% -m pip install --upgrade pip
-%PYTHON_EXE% -m pip install -r "%~dp0requirements.txt"
-
-:LaunchApp
-echo [4/4] Starting Projector Room main.py...
-start "" %PYTHON_EXE% "%~dp0main.py"
+%PYTHON_EXE% --version
+if errorlevel 1 goto :PythonFailed
 
 echo.
-echo ========================================================
-echo SUCCESS: Projector Room is running!
-echo ========================================================
-ping 127.0.0.1 -n 3 >nul 2>&1
+echo [2/3] Checking installer files...
+if not exist "%~dp0installer.py" (
+  echo [ERROR] installer.py was not found in this folder.
+  pause
+  exit /b 1
+)
+if not exist "%~dp0main.py" (
+  echo [ERROR] main.py was not found in this folder.
+  pause
+  exit /b 1
+)
+
+echo.
+echo [3/3] Installing dependencies and starting Projector Room...
+%PYTHON_EXE% "%~dp0installer.py"
+if errorlevel 1 goto :InstallFailed
+
+echo.
+echo Installer finished.
 exit /b 0
+
+:PythonFailed
+echo [ERROR] Python could not start.
+pause
+exit /b 1
+
+:InstallFailed
+echo.
+echo [ERROR] Installation failed. Read the error messages above.
+pause
+exit /b 1
