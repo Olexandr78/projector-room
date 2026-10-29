@@ -159,7 +159,11 @@ class ProjectorWindow(tk.Toplevel):
         self.is_fullscreen = False
         if self.target_display:
             d = self.target_display
-            self.geometry(f"{d['width']}x{d['height']}+{d['x']}+{d['y']}")
+            x_sign = "+" if d["x"] >= 0 else "-"
+            y_sign = "+" if d["y"] >= 0 else "-"
+            self.geometry(
+                f"{d['width']}x{d['height']}{x_sign}{abs(d['x'])}{y_sign}{abs(d['y'])}"
+            )
             self.update_idletasks()
             self.attributes("-fullscreen", True)
             self.is_fullscreen = True
