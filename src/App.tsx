@@ -147,6 +147,19 @@ export default function App() {
   // Open a separate projector window and, when supported by the browser,
   // move it to the non-primary display. The browser may ask for screen permission.
   const handleOpenProjectorWindow = () => {
+    // In the packaged desktop app, create the projector as another native WebView
+    // window so it stays inside Projector Room instead of opening an external browser.
+    const desktopApi = (window as Window & {
+      pywebview?: { api?: { open_projector?: () => Promise<unknown> } };
+    }).pywebview?.api;
+
+    if (desktopApi?.open_projector) {
+      desktopApi.open_projector()
+        .then(() => setIsProjectorWindowOpen(true))
+        .catch((error) => alert(`Не удалось открыть окно проектора: ${String(error)}`));
+      return;
+    }
+
     const url = `${window.location.origin}${window.location.pathname}?mode=projector`;
     const newWindow = window.open(
       url,
