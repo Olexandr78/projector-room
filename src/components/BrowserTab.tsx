@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ProjectorState } from '../types';
 import {
   Globe,
@@ -24,6 +24,59 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const [inputUrl, setInputUrl] = useState(currentBrowser.url);
   const [iframeKey, setIframeKey] = useState(1);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  type DesktopBrowserApi = {
+    open_site?: (url: string) => Promise<unknown>;
+    close_site?: () => Promise<unknown>;
+    set_browser_preview_bounds?: (left: number, top: number, width: number, height: number) => Promise<unknown>;
+    hide_browser_preview?: () => Promise<unknown>;
+  };
+
+  const desktopApi = () => (window as Window & { pywebview?: { api?: DesktopBrowserApi } }).pywebview?.api;
+
+  // In the Windows desktop app, a native WebView is positioned directly over this
+  // preview area. Unlike an iframe, it can display sites that forbid framing.
+  useEffect(() => {
+    const api = desktopApi();
+    const host = previewRef.current;
+    if (!api || !host || !api.set_browser_preview_bounds) return;
+
+    const updateBounds = () => {
+      const rect = host.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      void api.set_browser_preview_bounds!(
+        Math.round(rect.left * dpr),
+        Math.round(rect.top * dpr),
+        Math.round(rect.width * dpr),
+        Math.round(rect.height * dpr),
+      ).catch(() => {});
+    };
+    updateBounds();
+    const observer = new ResizeObserver(updateBounds);
+    observer.observe(host);
+    window.addEventListener('resize', updateBounds);
+    window.addEventListener('scroll', updateBounds, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateBounds);
+      window.removeEventListener('scroll', updateBounds, true);
+      void api.hide_browser_preview?.().catch(() => {});
+    };
+  }, []);
+
+  // Re-open the selected address when returning to the Browser tab.
+  useEffect(() => {
+    const api = desktopApi();
+    if (!api) return;
+    if (/^https?:\/\//i.test(currentBrowser.url)) {
+      api.open_site?.(currentBrowser.url).catch((error) => {
+        alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`);
+      });
+    } else {
+      api.close_site?.().catch(() => {});
+    }
+  }, [currentBrowser.url]);
 
   const normalizeUrl = (raw: string): string => {
     let clean = raw.trim();
@@ -63,12 +116,18 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const handleNavigate = (targetUrl?: string, title?: string) => {
     const finalUrl = normalizeUrl(targetUrl || inputUrl);
-    const desktopApi = (window as Window & { pywebview?: { api?: { open_site?: (url: string) => Promise<unknown> } } }).pywebview?.api;
-    if (desktopApi?.open_site && /^https?:\/\//i.test(finalUrl)) {
-      desktopApi.open_site(finalUrl).catch((error) => alert(`Не удалось открыть сайт в окне проектора: ${String(error)}`));
-    }
     setInputUrl(finalUrl);
     setIframeKey((prev) => prev + 1);
+
+    // If the address is unchanged, React will not re-run the address effect.
+    if (finalUrl === currentBrowser.url) {
+      const api = desktopApi();
+      if (/^https?:\/\//i.test(finalUrl)) {
+        api?.open_site?.(finalUrl).catch((error) => alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`));
+      } else {
+        api?.close_site?.().catch(() => {});
+      }
+    }
 
     onUpdateState({
       mode: 'browser',
@@ -81,7 +140,12 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
   };
 
   const handleRefresh = () => {
-    setIframeKey((prev) => prev + 1);
+    const api = desktopApi();
+    if (api?.open_site && /^https?:\/\//i.test(currentBrowser.url)) {
+      api.open_site(currentBrowser.url).catch((error) => alert(`Не удалось обновить сайт: ${String(error)}`));
+    } else {
+      setIframeKey((prev) => prev + 1);
+    }
   };
 
   const handleZoom = (delta: number) => {
@@ -192,22 +256,21 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
         </a>
       </div>
 
-      {/* 3. Browser preview. In the desktop app, show status here because many sites
-          intentionally block iframe previews; the full page opens in the projector WebView. */}
-      <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-2 h-[480px] flex items-center justify-center overflow-hidden shadow-inner">
-        {(window as Window & { pywebview?: { api?: unknown } }).pywebview?.api ? (
-          <div className="w-full h-full rounded-lg border border-neutral-800 bg-neutral-900 flex flex-col items-center justify-center p-8 text-center">
-            <Globe className="w-12 h-12 text-amber-400 mb-4" />
-            <h3 className="text-sm font-semibold text-neutral-100">Встроенный WebView проектора</h3>
-            <p className="text-xs text-neutral-400 mt-2 max-w-xl">
-              {currentBrowser.url === 'about:blank'
-                ? 'Введите адрес сайта выше и нажмите «На проектор».'
-                : 'Полная страница открывается прямо в окне проектора. Если сайт запрещает iframe, это не мешает обычной загрузке в WebView.'}
-            </p>
-            {currentBrowser.url !== 'about:blank' && (
-              <p className="mt-4 max-w-full truncate text-xs font-mono text-amber-300">{currentBrowser.url}</p>
-            )}
-          </div>
+      {/* 3. Website preview in the teacher application.
+          On Windows desktop, a native WebView child is placed over this host. */}
+      <div
+        ref={previewRef}
+        id="projector-room-browser-preview"
+        className="bg-white border border-neutral-800 rounded-lg h-[480px] relative overflow-hidden shadow-inner"
+      >
+        {(window as Window & { pywebview?: { api?: DesktopBrowserApi } }).pywebview?.api ? (
+          currentBrowser.url === 'about:blank' ? (
+            <div className="absolute inset-0 bg-neutral-900 text-neutral-300 flex flex-col items-center justify-center p-8 text-center">
+              <Globe className="w-12 h-12 text-amber-400 mb-4" />
+              <h3 className="text-sm font-semibold text-neutral-100">Встроенный браузер</h3>
+              <p className="text-xs mt-2">Введите адрес сайта выше и нажмите «На проектор».</p>
+            </div>
+          ) : null
         ) : (
           <iframe
             key={iframeKey}
@@ -216,7 +279,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
             allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
             allowFullScreen
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
-            className="w-full h-full border-none rounded bg-white transition-transform"
+            className="absolute inset-0 w-full h-full border-none rounded bg-white"
             style={{
               transform: `scale(${currentBrowser.zoom})`,
               transformOrigin: 'top left',
