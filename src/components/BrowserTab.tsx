@@ -27,7 +27,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
   const normalizeUrl = (raw: string): string => {
     let clean = raw.trim();
-    if (!clean) return 'about:blank';
+    if (!clean || clean === 'about:blank') return 'about:blank';
     if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
       clean = 'https://' + clean;
     }
