@@ -930,6 +930,7 @@ class DesktopWebviewApi:
         self.current_site_url = None
         self.preview_bounds = (0, 0, 640, 360)
         self._native_handles = {}
+        self._native_controls = {}
 
     def _browser_window(self, kind):
         return self.teacher_browser_window if kind == "teacher" else self.projector_browser_window
@@ -963,113 +964,106 @@ class DesktopWebviewApi:
         return int(found) if found else 0
 
     def _attach_browser_surface(self, kind, attempt=0):
-        """Reparent a pywebview window as a real child of the teacher/projector WebView."""
+        """Move the actual WinForms WebView control into the chosen app window."""
         if sys.platform != "win32":
             return False
-        import ctypes
-        from ctypes import wintypes
-
-        title = self.BROWSER_TITLES[kind]
         child_window = self._browser_window(kind)
         parent_window = self.main_window if kind == "teacher" else self.projector_window
-        parent_title = self.MAIN_WINDOW_TITLE if kind == "teacher" else self.PROJECTOR_WINDOW_TITLE
-        child = self._native_handles.get(kind)
-        if not child or not ctypes.windll.user32.IsWindow(child):
-            child = self._native_hwnd(child_window, title)
-        if child:
-            # Save the handle immediately; the remote page may change its title later.
-            self._native_handles[kind] = child
-        parent = self._native_hwnd(parent_window, parent_title)
-        if not child or not parent:
-            if attempt < 80:
+
+        child_form = getattr(child_window, "native", None) if child_window is not None else None
+        parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
+        browser_control = getattr(child_form, "webview", None) if child_form is not None else None
+
+        if child_form is None or parent_form is None or browser_control is None:
+            if attempt < 100:
                 timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
                 timer.daemon = True
                 timer.start()
             return False
 
-        user32 = ctypes.windll.user32
-        GWL_STYLE = -16
-        WS_CHILD = 0x40000000
-        WS_POPUP = 0x80000000
-        WS_CAPTION = 0x00C00000
-        WS_THICKFRAME = 0x00040000
-        WS_SYSMENU = 0x00080000
-        WS_MINIMIZEBOX = 0x00020000
-        WS_MAXIMIZEBOX = 0x00010000
-        WS_CLIPSIBLINGS = 0x04000000
-        SWP_NOZORDER = 0x0004
-        SWP_FRAMECHANGED = 0x0020
-        SWP_SHOWWINDOW = 0x0040
+        def attach_control():
+            from System.Drawing import Point, Size
 
-        get_long = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
-        set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
-        get_long.restype = ctypes.c_ssize_t
-        get_long.argtypes = [wintypes.HWND, ctypes.c_int]
-        set_long.restype = ctypes.c_ssize_t
-        set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
-        user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
-        user32.SetParent.restype = wintypes.HWND
-        user32.SetWindowPos.argtypes = [
-            wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT
-        ]
-        user32.SetWindowPos.restype = wintypes.BOOL
+            if kind == "teacher":
+                left, top, width, height = self.preview_bounds
+            else:
+                left, top = 0, 0
+                width = int(parent_form.ClientSize.Width)
+                height = int(parent_form.ClientSize.Height)
 
-        style = get_long(child, GWL_STYLE)
-        style = (style & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU |
-                           WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_CHILD | WS_CLIPSIBLINGS
-        set_long(child, GWL_STYLE, style)
-        user32.SetParent(child, parent)
-        self._native_handles[kind] = child
-        self._position_browser_surface(kind)
-        return True
+            if width < 1 or height < 1:
+                return False
+
+            # Reparent the WebView2 control itself, not its top-level Form HWND.
+            # This avoids the blank/failed WebView2 surface that can appear after
+            # raw Win32 SetParent calls between separate WebView2 forms.
+            browser_control.Parent = parent_form
+            browser_control.Location = Point(int(left), int(top))
+            browser_control.Size = Size(int(width), int(height))
+            browser_control.Visible = True
+            browser_control.BringToFront()
+            self._native_controls[kind] = browser_control
+
+            # The original host Form is now only a shell; keep it hidden so it
+            # cannot appear as a separate browser window.
+            try:
+                child_form.Hide()
+            except Exception:
+                pass
+            return True
+
+        try:
+            if bool(parent_form.InvokeRequired):
+                from System import Action
+                result = parent_form.Invoke(Action(attach_control))
+                return bool(result)
+            return bool(attach_control())
+        except Exception:
+            if attempt < 100:
+                timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
+                timer.daemon = True
+                timer.start()
+            return False
 
     def _position_browser_surface(self, kind):
-        """Keep the native child WebView inside its corresponding HTML preview area."""
+        """Resize the reparented WebView control to its live preview rectangle."""
         if sys.platform != "win32":
             return False
-        import ctypes
-        from ctypes import wintypes
-
-        user32 = ctypes.windll.user32
-        child = self._native_handles.get(kind)
-        if not child or not user32.IsWindow(child):
-            return False
-        parent_title = self.MAIN_WINDOW_TITLE if kind == "teacher" else self.PROJECTOR_WINDOW_TITLE
+        control = self._native_controls.get(kind)
+        child_window = self._browser_window(kind)
         parent_window = self.main_window if kind == "teacher" else self.projector_window
-        parent = self._native_hwnd(parent_window, parent_title)
-        if not parent:
+        parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
+
+        if control is None and child_window is not None:
+            # The control may have become available after the first layout event.
+            self._attach_browser_surface(kind)
+            control = self._native_controls.get(kind)
+        if control is None or parent_form is None:
             return False
 
-        if kind == "teacher":
-            left, top, width, height = self.preview_bounds
-        else:
-            class RECT(ctypes.Structure):
-                _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG),
-                            ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
-            rect = RECT()
-            user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
-            user32.GetClientRect.restype = wintypes.BOOL
-            if not user32.GetClientRect(parent, ctypes.byref(rect)):
+        def position_control():
+            from System.Drawing import Point, Size
+            if kind == "teacher":
+                left, top, width, height = self.preview_bounds
+            else:
+                left, top = 0, 0
+                width = int(parent_form.ClientSize.Width)
+                height = int(parent_form.ClientSize.Height)
+            if width < 1 or height < 1:
                 return False
-            left, top = 0, 0
-            width, height = rect.right - rect.left, rect.bottom - rect.top
+            control.Location = Point(int(left), int(top))
+            control.Size = Size(int(width), int(height))
+            control.Visible = True
+            control.BringToFront()
+            return True
 
-        if width < 1 or height < 1:
+        try:
+            if bool(parent_form.InvokeRequired):
+                from System import Action
+                return bool(parent_form.Invoke(Action(position_control)))
+            return bool(position_control())
+        except Exception:
             return False
-        user32.SetWindowPos.argtypes = [
-            wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT
-        ]
-        user32.SetWindowPos.restype = wintypes.BOOL
-        SWP_NOZORDER = 0x0004
-        SWP_NOACTIVATE = 0x0010
-        SWP_SHOWWINDOW = 0x0040
-        SWP_FRAMECHANGED = 0x0020
-        return bool(user32.SetWindowPos(
-            child, None, int(left), int(top), int(width), int(height),
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED
-        ))
 
     def _on_browser_loaded(self, kind):
         """Mirror link navigation between the teacher preview and projector WebView."""
@@ -1111,16 +1105,25 @@ class DesktopWebviewApi:
         return True
 
     def hide_browser_preview(self):
-        """Hide only the teacher-side surface when its tab is not visible."""
-        if self.teacher_browser_window is not None:
-            try:
-                self.teacher_browser_window.hide()
-            except Exception:
-                pass
+        """Hide only the teacher-side WebView when the Browser tab is not visible."""
+        control = self._native_controls.get("teacher")
+        if control is None:
+            return True
+        try:
+            parent = getattr(control, "Parent", None)
+            def hide_control():
+                control.Visible = False
+            if parent is not None and bool(parent.InvokeRequired):
+                from System import Action
+                parent.Invoke(Action(hide_control))
+            else:
+                hide_control()
+        except Exception:
+            pass
         return True
 
     def open_site(self, url):
-        """Show a native WebView inside the teacher preview and mirror it on the projector."""
+        """Load a URL in native WebViews embedded in the teacher preview and projector."""
         from urllib.parse import urlparse
         import webview
 
@@ -1140,11 +1143,17 @@ class DesktopWebviewApi:
                 continue
             browser_window = self._browser_window(kind)
             if browser_window is None:
-                title = self.BROWSER_TITLES[kind]
                 browser_window = webview.create_window(
-                    title, url=url,
-                    x=-32000, y=-32000, width=900, height=600,
-                    fullscreen=False, frameless=True, resizable=False, text_select=True,
+                    self.BROWSER_TITLES[kind],
+                    url=url,
+                    x=-32000,
+                    y=-32000,
+                    width=900,
+                    height=600,
+                    fullscreen=False,
+                    frameless=True,
+                    resizable=False,
+                    text_select=True,
                 )
                 self._set_browser_window(kind, browser_window)
                 try:
@@ -1152,46 +1161,51 @@ class DesktopWebviewApi:
                     browser_window.events.loaded += lambda *args, k=kind: self._on_browser_loaded(k)
                 except Exception:
                     pass
-                timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, 0))
+                timer = threading.Timer(0.2, self._attach_browser_surface, args=(kind, 0))
                 timer.daemon = True
                 timer.start()
             else:
                 try:
                     if not same_url:
                         browser_window.load_url(url)
-                    browser_window.show()
-                except Exception:
-                    try:
-                        browser_window.destroy()
-                    except Exception:
-                        pass
-                    self._set_browser_window(kind, None)
-                    self._native_handles.pop(kind, None)
-                    return self.open_site(url)
+                except Exception as exc:
+                    raise RuntimeError("Не удалось загрузить сайт в WebView: {}".format(exc)) from exc
+
             self._attach_browser_surface(kind)
+            control = self._native_controls.get(kind)
+            if control is not None:
+                try:
+                    control.Visible = True
+                except Exception:
+                    pass
         return True
 
     def refresh_site(self):
-        """Reload the active address in both native browser surfaces."""
+        """Reload the active page in both native browser surfaces."""
         if not self.current_site_url:
             return False
-        for browser_window in (self.teacher_browser_window, self.projector_browser_window):
-            if browser_window is not None:
+        for kind in ("teacher", "projector"):
+            window = self._browser_window(kind)
+            if window is not None:
                 try:
-                    browser_window.load_url(self.current_site_url)
-                    browser_window.show()
+                    window.load_url(self.current_site_url)
+                except Exception:
+                    pass
+            control = self._native_controls.get(kind)
+            if control is not None:
+                try:
+                    control.Visible = True
                 except Exception:
                     pass
         return True
 
     def close_site(self):
-        """Hide browser surfaces without replacing either application's React page."""
-        for window in (self.teacher_browser_window, self.projector_browser_window):
-            if window is not None:
-                try:
-                    window.hide()
-                except Exception:
-                    pass
+        """Hide embedded browser controls when leaving browser mode."""
+        for control in self._native_controls.values():
+            try:
+                control.Visible = False
+            except Exception:
+                pass
         return True
 
     def save_pdf(self, filename, base64_data):
