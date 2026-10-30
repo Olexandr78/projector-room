@@ -35,6 +35,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
     refresh_site?: () => Promise<unknown>;
     set_browser_preview_bounds?: (left: number, top: number, width: number, height: number) => Promise<unknown>;
     hide_browser_preview?: () => Promise<unknown>;
+    diagnostic_log?: (message: string) => Promise<unknown>;
   };
 
   const desktopApi = () => (window as Window & { pywebview?: { api?: DesktopBrowserApi } }).pywebview?.api;
@@ -120,7 +121,10 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
   useEffect(() => {
     const api = desktopApi();
     if (!api) return;
-    api.open_site?.(currentBrowser.url || 'about:blank').catch((error) => {
+    api.open_site?.(currentBrowser.url || 'about:blank').then(() => {
+      void api.diagnostic_log?.('BrowserTab requested native WebView open');
+    }).catch((error) => {
+      void api.diagnostic_log?.(`open_site failed: ${String(error)}`);
       alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`);
     });
   }, [currentBrowser.url, desktopApiReady]);
