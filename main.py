@@ -998,6 +998,7 @@ class DesktopWebviewApi:
 
         def attach_control():
             from System.Drawing import Point, Size
+            from System.Windows.Forms import DockStyle
 
             if kind == "teacher":
                 left, top, width, height = self.preview_bounds
@@ -1009,9 +1010,11 @@ class DesktopWebviewApi:
             if width < 1 or height < 1:
                 return False
 
-            # Reparent the WebView2 control itself, not its top-level Form HWND.
-            # This avoids the blank/failed WebView2 surface that can appear after
-            # raw Win32 SetParent calls between separate WebView2 forms.
+            # pywebview creates its WebView2 control with Dock=Fill. After
+            # reparenting into the teacher form that would cover the entire app,
+            # ignoring the preview rectangle. Disable docking before assigning
+            # the explicit preview coordinates and dimensions.
+            browser_control.Dock = DockStyle.None
             browser_control.Parent = parent_form
             browser_control.Location = Point(int(left), int(top))
             browser_control.Size = Size(int(width), int(height))
