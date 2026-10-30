@@ -1025,6 +1025,7 @@ class DesktopWebviewApi:
         self.preview_bounds = (0, 0, 640, 360)
         self._native_handles = {}
         self._native_controls = {}
+        self._native_event_handlers = {}
         LOGGER.info("DesktopWebviewApi initialized; base_url=%s", self.base_url)
 
     def diagnostic_log(self, message):
@@ -1103,22 +1104,57 @@ class DesktopWebviewApi:
             if width < 1 or height < 1:
                 return False
 
-            # pywebview creates its WebView2 control with Dock=Fill. After
-            # reparenting into the teacher form that would cover the entire app,
-            # ignoring the preview rectangle. Disable docking before assigning
-            # the explicit preview coordinates and dimensions.
-            browser_control.Dock = getattr(DockStyle, 'None')
-            browser_control.Parent = parent_form
+            already_attached = self._native_controls.get(kind) is browser_control
+            try:
+                already_attached = already_attached and browser_control.Parent == parent_form
+            except Exception:
+                already_attached = False
+
+            if not already_attached:
+                # pywebview creates its WebView2 control with Dock=Fill. After
+                # reparenting into the teacher form that would cover the entire app,
+                # ignoring the preview rectangle. Disable docking before assigning
+                # the explicit preview coordinates and dimensions.
+                browser_control.Dock = getattr(DockStyle, 'None')
+                browser_control.Parent = parent_form
+                self._native_controls[kind] = browser_control
+
             browser_control.Location = Point(int(left), int(top))
             browser_control.Size = Size(int(width), int(height))
             browser_control.Visible = True
             browser_control.BringToFront()
-            self._native_controls[kind] = browser_control
-            LOGGER.info(
-                "Attached %s WebView to parent: bounds=(%s,%s,%s,%s), parent_client=(%s,%s), dock=None",
-                kind, left, top, width, height,
-                int(parent_form.ClientSize.Width), int(parent_form.ClientSize.Height),
-            )
+
+            if not already_attached:
+                LOGGER.info(
+                    "Attached %s WebView once: bounds=(%s,%s,%s,%s), parent_client=(%s,%s), visible=%s",
+                    kind, left, top, width, height,
+                    int(parent_form.ClientSize.Width), int(parent_form.ClientSize.Height),
+                    bool(browser_control.Visible),
+                )
+                # Log the actual WebView2 navigation outcome. This distinguishes a
+                # correctly positioned but blank control from a failed navigation.
+                def on_navigation_completed(sender, args, browser_kind=kind):
+                    try:
+                        source = str(sender.Source) if sender.Source is not None else ""
+                        success = bool(args.IsSuccess)
+                        error_status = str(args.WebErrorStatus)
+                        LOGGER.info(
+                            "%s WebView2 NavigationCompleted: success=%s error=%s source=%s",
+                            browser_kind, success, error_status, source[:500],
+                        )
+                    except Exception:
+                        LOGGER.exception("%s WebView2 NavigationCompleted logging failed", browser_kind)
+
+                try:
+                    browser_control.NavigationCompleted += on_navigation_completed
+                    self._native_event_handlers[kind] = on_navigation_completed
+                except Exception:
+                    LOGGER.exception("Could not subscribe to %s WebView2 navigation events", kind)
+            else:
+                LOGGER.debug(
+                    "%s WebView already attached; updated bounds=(%s,%s,%s,%s)",
+                    kind, left, top, width, height,
+                )
 
             # The original host Form is now only a shell; keep it hidden so it
             # cannot appear as a separate browser window.
@@ -1189,7 +1225,9 @@ class DesktopWebviewApi:
         try:
             url = window.get_current_url()
         except Exception:
+            LOGGER.exception("%s WebView loaded event could not read current URL", kind)
             return
+        LOGGER.info("%s pywebview loaded event: url=%s", kind, (url or "")[:500])
         if not url or not url.startswith(("http://", "https://")) or url == self.current_site_url:
             return
 
@@ -1288,18 +1326,19 @@ class DesktopWebviewApi:
                 )
                 self._set_browser_window(kind, browser_window)
                 try:
-                    browser_window.events.shown += lambda *args, k=kind: self._attach_browser_surface(k)
+                    # _attach_browser_surface below owns the single retry chain.
+                    # Do not also attach from 'shown' and a second timer: those
+                    # three triggers raced and reparented the same control repeatedly.
                     browser_window.events.loaded += lambda *args, k=kind: self._on_browser_loaded(k)
                 except Exception:
-                    pass
-                timer = threading.Timer(0.2, self._attach_browser_surface, args=(kind, 0))
-                timer.daemon = True
-                timer.start()
+                    LOGGER.exception("Could not subscribe to %s WebView loaded event", kind)
             else:
                 try:
                     if not same_url:
+                        LOGGER.info("%s WebView load_url started: %s", kind, url[:500])
                         browser_window.load_url(url)
                 except Exception as exc:
+                    LOGGER.exception("%s WebView load_url failed: %s", kind, url[:500])
                     raise RuntimeError("Не удалось загрузить сайт в WebView: {}".format(exc)) from exc
 
             self._attach_browser_surface(kind)
