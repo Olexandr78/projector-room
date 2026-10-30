@@ -1148,12 +1148,13 @@ class DesktopWebviewApi:
 
         url = str(url or "").strip()
         if not url:
-            raise ValueError("Адрес сайта пустой")
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise ValueError("Разрешены только адреса http:// и https://")
+            url = "about:blank"
+        if url != "about:blank":
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError("Разрешены только адреса http:// и https://")
 
         same_url = url == self.current_site_url
         self.current_site_url = url
@@ -1272,7 +1273,9 @@ class DesktopWebviewApi:
 
         self.projector_window = webview.create_window(
             self.PROJECTOR_WINDOW_TITLE,
-            url=self.base_url + "?mode=projector",
+            # Tell the projector React view that its page content is supplied
+            # by the native WebView control attached to this window.
+            url=self.base_url + "?mode=projector&nativeBrowser=1",
             x=x,
             y=y,
             width=width,
