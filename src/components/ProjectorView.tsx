@@ -419,20 +419,22 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
             {/* 5. Browser Tab Mode (Web pages & Simulators to Projector) */}
             {state.mode === 'browser' && state.activeBrowser && (
               <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
-                <iframe
-                  src={state.activeBrowser.url}
-                  title={state.activeBrowser.title}
-                  allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen; clipboard-write"
-                  allowFullScreen
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
-                  className="w-full h-full border-none transition-transform"
-                  style={{
-                    transform: `scale(${state.activeBrowser.zoom})`,
-                    transformOrigin: 'top left',
-                    width: `${100 / state.activeBrowser.zoom}%`,
-                    height: `${100 / state.activeBrowser.zoom}%`,
-                  }}
-                />
+                {new URLSearchParams(window.location.search).get('nativeBrowser') !== '1' && (
+                  <iframe
+                    src={state.activeBrowser.url}
+                    title={state.activeBrowser.title}
+                    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen; clipboard-write"
+                    allowFullScreen
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation"
+                    className="w-full h-full border-none transition-transform"
+                    style={{
+                      transform: `scale(${state.activeBrowser.zoom})`,
+                      transformOrigin: 'top left',
+                      width: `${100 / state.activeBrowser.zoom}%`,
+                      height: `${100 / state.activeBrowser.zoom}%`,
+                    }}
+                  />
+                )}
               </div>
             )}
 
