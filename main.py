@@ -921,6 +921,21 @@ class DesktopWebviewApi:
         "projector": "ProjectorRoomProjectorBrowserSurface",
     }
 
+    def __dir__(self):
+        # pywebview 6.2.x recursively inspects public attributes of js_api objects.
+        # Exposing native Window/WinForms references here causes infinite traversal
+        # through AccessibilityObject/ActiveControl and cross-thread WebView2 errors.
+        # Only list the methods that JavaScript is allowed to call.
+        return [
+            "open_site",
+            "close_site",
+            "refresh_site",
+            "set_browser_preview_bounds",
+            "hide_browser_preview",
+            "save_pdf",
+            "open_projector",
+        ]
+
     def __init__(self, base_url):
         self.base_url = base_url
         self.main_window = None
