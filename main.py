@@ -1014,7 +1014,7 @@ class DesktopWebviewApi:
             # reparenting into the teacher form that would cover the entire app,
             # ignoring the preview rectangle. Disable docking before assigning
             # the explicit preview coordinates and dimensions.
-            browser_control.Dock = DockStyle.None
+            browser_control.Dock = getattr(DockStyle, 'None')
             browser_control.Parent = parent_form
             browser_control.Location = Point(int(left), int(top))
             browser_control.Size = Size(int(width), int(height))
