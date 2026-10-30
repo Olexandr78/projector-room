@@ -1045,14 +1045,12 @@ class DesktopWebviewApi:
         if sys.platform != "win32":
             return False
         control = self._native_controls.get(kind)
-        child_window = self._browser_window(kind)
         parent_window = self.main_window if kind == "teacher" else self.projector_window
         parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
 
-        if control is None and child_window is not None:
-            # The control may have become available after the first layout event.
-            self._attach_browser_surface(kind)
-            control = self._native_controls.get(kind)
+        # Attachment/retry is started by open_site and the native window's shown
+        # event. Do not start another retry chain from frequent resize/scroll
+        # notifications while the native control is still being created.
         if control is None or parent_form is None:
             return False
 
@@ -1115,7 +1113,10 @@ class DesktopWebviewApi:
     def set_browser_preview_bounds(self, left, top, width, height):
         """Position the native browser surface over the Browser tab inside the teacher app."""
         self.preview_bounds = tuple(int(round(value)) for value in (left, top, width, height))
-        if self.teacher_browser_window is not None:
+        # The initial attachment is handled by open_site. Only reposition an
+        # existing native control here; repeated layout notifications must not
+        # create parallel attachment retry timers.
+        if self._native_controls.get("teacher") is not None:
             self._position_browser_surface("teacher")
         return True
 
