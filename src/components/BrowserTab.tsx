@@ -58,25 +58,60 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
     const host = previewRef.current;
     if (!api || !host || !api.set_browser_preview_bounds) return;
 
-    const updateBounds = () => {
+    let frameId = 0;
+    let timerId: number | undefined;
+    let lastSentAt = 0;
+    let lastBounds = '';
+
+    // Coalesce resize/scroll events and limit native bridge traffic. Each
+    // pywebview API call crosses into Python and the WinForms UI thread.
+    const sendBounds = () => {
+      frameId = 0;
       const rect = host.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      void api.set_browser_preview_bounds!(
+      const bounds = [
         Math.round(rect.left * dpr),
         Math.round(rect.top * dpr),
         Math.round(rect.width * dpr),
         Math.round(rect.height * dpr),
-      ).catch(() => {});
+      ];
+      const key = bounds.join(',');
+      if (key === lastBounds) return;
+
+      const elapsed = performance.now() - lastSentAt;
+      const wait = 60 - elapsed;
+      if (wait > 0) {
+        if (timerId === undefined) {
+          timerId = window.setTimeout(() => {
+            timerId = undefined;
+            scheduleBounds();
+          }, wait);
+        }
+        return;
+      }
+
+      lastSentAt = performance.now();
+      lastBounds = key;
+      void api.set_browser_preview_bounds!(...bounds).catch(() => {});
     };
-    updateBounds();
-    const observer = new ResizeObserver(updateBounds);
+
+    const scheduleBounds = () => {
+      if (frameId === 0) {
+        frameId = window.requestAnimationFrame(sendBounds);
+      }
+    };
+
+    scheduleBounds();
+    const observer = new ResizeObserver(scheduleBounds);
     observer.observe(host);
-    window.addEventListener('resize', updateBounds);
-    window.addEventListener('scroll', updateBounds, true);
+    window.addEventListener('resize', scheduleBounds);
+    window.addEventListener('scroll', scheduleBounds, true);
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', updateBounds);
-      window.removeEventListener('scroll', updateBounds, true);
+      window.removeEventListener('resize', scheduleBounds);
+      window.removeEventListener('scroll', scheduleBounds, true);
+      if (frameId !== 0) window.cancelAnimationFrame(frameId);
+      if (timerId !== undefined) window.clearTimeout(timerId);
       void api.hide_browser_preview?.().catch(() => {});
     };
   }, [desktopApiReady]);
