@@ -120,13 +120,9 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
   useEffect(() => {
     const api = desktopApi();
     if (!api) return;
-    if (/^https?:\/\//i.test(currentBrowser.url)) {
-      api.open_site?.(currentBrowser.url).catch((error) => {
-        alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`);
-      });
-    } else {
-      api.close_site?.().catch(() => {});
-    }
+    api.open_site?.(currentBrowser.url || 'about:blank').catch((error) => {
+      alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`);
+    });
   }, [currentBrowser.url, desktopApiReady]);
 
   // Update the address field and shared state when the user follows a link
@@ -192,11 +188,9 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
     // If the address is unchanged, React will not re-run the address effect.
     if (finalUrl === currentBrowser.url) {
       const api = desktopApi();
-      if (/^https?:\/\//i.test(finalUrl)) {
-        api?.open_site?.(finalUrl).catch((error) => alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`));
-      } else {
-        api?.close_site?.().catch(() => {});
-      }
+      api?.open_site?.(finalUrl || 'about:blank').catch((error) => {
+        alert(`Не удалось открыть сайт во встроенном WebView: ${String(error)}`);
+      });
     }
 
     onUpdateState({
@@ -335,15 +329,7 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
         id="projector-room-browser-preview"
         className="bg-white border border-neutral-800 rounded-lg h-[480px] relative overflow-hidden shadow-inner"
       >
-        {(desktopApiReady || Boolean(desktopApi())) ? (
-          currentBrowser.url === 'about:blank' ? (
-            <div className="absolute inset-0 bg-neutral-900 text-neutral-300 flex flex-col items-center justify-center p-8 text-center">
-              <Globe className="w-12 h-12 text-amber-400 mb-4" />
-              <h3 className="text-sm font-semibold text-neutral-100">Встроенный браузер</h3>
-              <p className="text-xs mt-2">Введите адрес сайта выше и нажмите «На проектор».</p>
-            </div>
-          ) : null
-        ) : (
+        {(desktopApiReady || Boolean(desktopApi())) ? null : (
           <iframe
             key={iframeKey}
             src={currentBrowser.url}
