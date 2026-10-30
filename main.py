@@ -18,9 +18,87 @@ import json
 import time
 import threading
 import subprocess
+import logging
+import faulthandler
+import atexit
+from logging.handlers import RotatingFileHandler
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
+
+
+# Always write diagnostics next to main.py so a frozen GUI still leaves a log.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(APP_DIR, "projector_room.log")
+THREAD_DUMP_PATH = os.path.join(APP_DIR, "projector_room_threads.log")
+LOGGER = logging.getLogger("projector_room")
+LOGGER.setLevel(logging.DEBUG)
+LOGGER.propagate = False
+
+_log_handler = RotatingFileHandler(
+    LOG_PATH, maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8"
+)
+_log_handler.setFormatter(logging.Formatter(
+    "%(asctime)s.%(msecs)03d [%(levelname)s] [%(threadName)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+LOGGER.addHandler(_log_handler)
+LOGGER.info("=" * 72)
+LOGGER.info("Projector Room starting; pid=%s python=%s platform=%s",
+            os.getpid(), sys.version.split()[0], sys.platform)
+LOGGER.info("Application directory: %s", APP_DIR)
+LOGGER.info("Diagnostic log: %s", LOG_PATH)
+LOGGER.info("Thread stack log: %s", THREAD_DUMP_PATH)
+
+
+def _log_uncaught_exception(exc_type, exc_value, exc_traceback):
+    LOGGER.critical("Uncaught Python exception", exc_info=(exc_type, exc_value, exc_traceback))
+    sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+
+sys.excepthook = _log_uncaught_exception
+
+
+def _log_thread_exception(args):
+    LOGGER.critical(
+        "Uncaught exception in thread %s",
+        getattr(args.thread, "name", "unknown"),
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+    threading.__excepthook__(args)
+
+
+threading.excepthook = _log_thread_exception
+
+_thread_dump_file = None
+try:
+    _thread_dump_file = open(THREAD_DUMP_PATH, "ab", buffering=0)
+    faulthandler.enable(file=_thread_dump_file, all_threads=True)
+    # Repeating stack snapshots make a GUI deadlock diagnosable even when
+    # no Python exception is raised and the window stops responding.
+    faulthandler.dump_traceback_later(
+        45, repeat=True, file=_thread_dump_file, exit=False
+    )
+except Exception:
+    LOGGER.exception("Could not enable periodic thread stack snapshots")
+
+
+def _shutdown_diagnostics():
+    try:
+        faulthandler.cancel_dump_traceback_later()
+        faulthandler.disable()
+    except Exception:
+        pass
+    try:
+        if _thread_dump_file:
+            _thread_dump_file.close()
+    except Exception:
+        pass
+    LOGGER.info("Projector Room shutdown")
+
+
+atexit.register(_shutdown_diagnostics)
+
 
 try:
     from screeninfo import get_monitors
@@ -934,6 +1012,7 @@ class DesktopWebviewApi:
             "hide_browser_preview",
             "save_pdf",
             "open_projector",
+            "diagnostic_log",
         ]
 
     def __init__(self, base_url):
@@ -946,6 +1025,13 @@ class DesktopWebviewApi:
         self.preview_bounds = (0, 0, 640, 360)
         self._native_handles = {}
         self._native_controls = {}
+        LOGGER.info("DesktopWebviewApi initialized; base_url=%s", self.base_url)
+
+    def diagnostic_log(self, message):
+        """Accept short diagnostic notes from the React UI without exposing native objects."""
+        safe_message = str(message or "").replace("\\r", " ").replace("\\n", " ")[:600]
+        LOGGER.info("[frontend] %s", safe_message)
+        return True
 
     def _browser_window(self, kind):
         return self.teacher_browser_window if kind == "teacher" else self.projector_browser_window
@@ -990,10 +1076,17 @@ class DesktopWebviewApi:
         browser_control = getattr(child_form, "webview", None) if child_form is not None else None
 
         if child_form is None or parent_form is None or browser_control is None:
+            if attempt == 0:
+                LOGGER.info(
+                    "Waiting for %s WebView native handles: child_form=%s parent_form=%s control=%s",
+                    kind, child_form is not None, parent_form is not None, browser_control is not None,
+                )
             if attempt < 100:
                 timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
                 timer.daemon = True
                 timer.start()
+            else:
+                LOGGER.error("Could not attach %s WebView after %s attempts", kind, attempt)
             return False
 
         def attach_control():
@@ -1021,6 +1114,11 @@ class DesktopWebviewApi:
             browser_control.Visible = True
             browser_control.BringToFront()
             self._native_controls[kind] = browser_control
+            LOGGER.info(
+                "Attached %s WebView to parent: bounds=(%s,%s,%s,%s), parent_client=(%s,%s), dock=None",
+                kind, left, top, width, height,
+                int(parent_form.ClientSize.Width), int(parent_form.ClientSize.Height),
+            )
 
             # The original host Form is now only a shell; keep it hidden so it
             # cannot appear as a separate browser window.
@@ -1037,6 +1135,8 @@ class DesktopWebviewApi:
                 return bool(result)
             return bool(attach_control())
         except Exception:
+            if attempt == 0 or attempt >= 99:
+                LOGGER.exception("Failed to attach %s WebView (attempt %s)", kind, attempt + 1)
             if attempt < 100:
                 timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
                 timer.daemon = True
@@ -1115,7 +1215,10 @@ class DesktopWebviewApi:
 
     def set_browser_preview_bounds(self, left, top, width, height):
         """Position the native browser surface over the Browser tab inside the teacher app."""
-        self.preview_bounds = tuple(int(round(value)) for value in (left, top, width, height))
+        next_bounds = tuple(int(round(value)) for value in (left, top, width, height))
+        if next_bounds != self.preview_bounds:
+            LOGGER.info("Teacher preview bounds updated: %s", next_bounds)
+        self.preview_bounds = next_bounds
         # The initial attachment is handled by open_site. Only reposition an
         # existing native control here; repeated layout notifications must not
         # create parallel attachment retry timers.
@@ -1158,6 +1261,14 @@ class DesktopWebviewApi:
 
         same_url = url == self.current_site_url
         self.current_site_url = url
+        try:
+            from urllib.parse import urlparse
+            safe_host = urlparse(url).netloc if url != "about:blank" else "about:blank"
+        except Exception:
+            safe_host = "unknown"
+        LOGGER.info("open_site requested: target=%s url_host=%s same_url=%s",
+                    "teacher+projector" if self.projector_window is not None else "teacher",
+                    safe_host, same_url)
         for kind in ("teacher", "projector"):
             if kind == "projector" and self.projector_window is None:
                 continue
@@ -1198,6 +1309,7 @@ class DesktopWebviewApi:
                     control.Visible = True
                 except Exception:
                     pass
+        LOGGER.info("open_site scheduling completed for url_host=%s", safe_host)
         return True
 
     def refresh_site(self):
@@ -1323,6 +1435,7 @@ def launch_react_desktop_app():
         app_url = "http://127.0.0.1:{}/".format(server.server_address[1])
         desktop_api = DesktopWebviewApi(app_url)
 
+        LOGGER.info("Starting local UI server at %s", app_url)
         main_window = webview.create_window(
             DesktopWebviewApi.MAIN_WINDOW_TITLE,
             url=app_url,
@@ -1334,7 +1447,14 @@ def launch_react_desktop_app():
         )
         desktop_api.main_window = main_window
         try:
+            main_window.events.shown += lambda *args: LOGGER.info("Main pywebview window shown")
+            main_window.events.loaded += lambda *args: LOGGER.info("Main pywebview window loaded")
+        except Exception:
+            LOGGER.exception("Could not subscribe to main WebView events")
+        try:
+            LOGGER.info("Entering webview.start() event loop")
             webview.start()
+            LOGGER.info("webview.start() returned")
         finally:
             server.shutdown()
             server.server_close()
@@ -1350,6 +1470,7 @@ def launch_react_desktop_app():
         root.destroy()
         return True
     except Exception as exc:
+        LOGGER.exception("Failed to start desktop WebView application")
         root = tk.Tk()
         root.withdraw()
         messagebox.showerror(
