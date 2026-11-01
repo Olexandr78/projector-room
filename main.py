@@ -1030,6 +1030,7 @@ class DesktopWebviewApi:
         self._attach_in_progress = set()
         self._attach_retry_pending = set()
         self._navigation_lock = threading.RLock()
+        self._state_lock = threading.RLock()
         self._browser_loaded_urls = {"teacher": None, "projector": None}
         LOGGER.info("DesktopWebviewApi initialized; base_url=%s", self.base_url)
 
@@ -1217,14 +1218,15 @@ class DesktopWebviewApi:
                 self._schedule_attach_retry(kind, attempt)
                 return False
 
-            with self._navigation_lock:
+            with self._state_lock:
                 target_url = self.current_site_url
                 already_loaded = self._browser_loaded_urls.get(kind) == target_url
             if target_url and not already_loaded:
                 try:
                     child_window.load_url(target_url)
-                    with self._navigation_lock:
-                        self._browser_loaded_urls[kind] = target_url
+                    with self._state_lock:
+                        if self.current_site_url == target_url:
+                            self._browser_loaded_urls[kind] = target_url
                     LOGGER.info("%s WebView deferred navigation loaded: %s", kind, target_url[:500])
                 except Exception:
                     LOGGER.exception("%s WebView deferred navigation failed", kind)
@@ -1273,7 +1275,7 @@ class DesktopWebviewApi:
             return False
 
     def _on_browser_loaded(self, kind):
-        """Mirror native navigation without repeatedly reloading both surfaces."""
+        """Mirror native navigation without blocking the WinForms UI thread on API locks."""
         window = self._browser_window(kind)
         if window is None:
             return
@@ -1286,22 +1288,28 @@ class DesktopWebviewApi:
         if not url or not url.startswith(("http://", "https://")):
             return
 
-        with self._navigation_lock:
+        with self._state_lock:
             self._browser_loaded_urls[kind] = url
-            if url == self.current_site_url:
-                return
-            self.current_site_url = url
+            changed = url != self.current_site_url
+            if changed:
+                self.current_site_url = url
+
+        if changed:
             for other_kind in ("teacher", "projector"):
                 if other_kind == kind:
                     continue
                 other_window = self._browser_window(other_kind)
                 if other_window is None or getattr(other_window, "native", None) is None:
                     continue
-                if self._browser_loaded_urls.get(other_kind) == url:
+                with self._state_lock:
+                    already_loaded = self._browser_loaded_urls.get(other_kind) == url
+                if already_loaded:
                     continue
                 try:
                     other_window.load_url(url)
-                    self._browser_loaded_urls[other_kind] = url
+                    with self._state_lock:
+                        if self.current_site_url == url:
+                            self._browser_loaded_urls[other_kind] = url
                 except Exception:
                     LOGGER.exception("Could not mirror %s navigation to %s", kind, other_kind)
 
@@ -1344,7 +1352,8 @@ class DesktopWebviewApi:
                 raise ValueError("Разрешены только адреса http:// и https://")
 
         with self._navigation_lock:
-            self.current_site_url = url
+            with self._state_lock:
+                self.current_site_url = url
             safe_host = urlparse(url).netloc if url != "about:blank" else "about:blank"
             LOGGER.info("open_site requested: url_host=%s", safe_host)
 
@@ -1377,10 +1386,13 @@ class DesktopWebviewApi:
                     self._schedule_attach_retry(kind, 0)
                     continue
 
-                if self._browser_loaded_urls.get(kind) != url:
+                with self._state_lock:
+                    needs_navigation = self._browser_loaded_urls.get(kind) != url
+                if needs_navigation:
                     try:
                         browser_window.load_url(url)
-                        self._browser_loaded_urls[kind] = url
+                        with self._state_lock:
+                            self._browser_loaded_urls[kind] = url
                         LOGGER.info("%s WebView load_url accepted: %s", kind, url[:500])
                     except Exception as exc:
                         LOGGER.exception("%s WebView load_url failed: %s", kind, url[:500])
@@ -1394,7 +1406,8 @@ class DesktopWebviewApi:
 
     def refresh_site(self):
         """Reload the active URL in each initialized browser without creating windows."""
-        url = self.current_site_url
+        with self._state_lock:
+            url = self.current_site_url
         if not url:
             return False
         with self._navigation_lock:
@@ -1408,7 +1421,8 @@ class DesktopWebviewApi:
                     continue
                 try:
                     window.load_url(url)
-                    self._browser_loaded_urls[kind] = url
+                    with self._state_lock:
+                        self._browser_loaded_urls[kind] = url
                     self._set_browser_control_visible(kind, True)
                 except Exception:
                     LOGGER.exception("Could not refresh %s WebView", kind)
