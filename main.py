@@ -1400,6 +1400,12 @@ class DesktopWebviewApi:
                     )
                     self._set_browser_window(kind, browser_window)
 
+                # Record visibility before checking native readiness. If the
+                # user submits an address while the child window is still starting,
+                # the later attach retry must show the control after loading it.
+                with self._state_lock:
+                    self._browser_visible[kind] = True
+
                 if getattr(browser_window, "native", None) is None:
                     LOGGER.info("%s WebView is not ready; navigation deferred", kind)
                     self._schedule_attach_retry(kind, 0)
@@ -1407,7 +1413,6 @@ class DesktopWebviewApi:
 
                 with self._state_lock:
                     needs_navigation = self._browser_loaded_urls.get(kind) != url
-                    self._browser_visible[kind] = True
                 if needs_navigation:
                     try:
                         browser_window.load_url(url)
