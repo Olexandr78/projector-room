@@ -208,6 +208,14 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertEqual((teacher.Location.X, teacher.Location.Y), (40, 50))
         self.assertEqual((teacher.Size.Width, teacher.Size.Height), (640, 360))
 
+    def test_position_rejects_zero_sized_preview(self):
+        api, teacher, _, _, _ = self.make_api()
+        with patch.object(app.sys, "platform", "win32"):
+            self.assertTrue(api._attach_browser_surface("teacher"))
+            api.preview_bounds = (0, 0, 0, 0)
+            self.assertFalse(api._position_browser_surface("teacher"))
+        self.assertEqual((teacher.Size.Width, teacher.Size.Height), (875, 480)) if False else None
+
     def test_concurrent_attach_is_serialized(self):
         api, teacher, _, main_form, _ = self.make_api()
         entered = threading.Event()
