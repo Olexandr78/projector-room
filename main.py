@@ -1465,6 +1465,10 @@ class DesktopWebviewApi:
         if window is None:
             raise RuntimeError("Окно проектора не было подготовлено при запуске приложения")
         try:
+            if getattr(window, "native", None) is None:
+                ready_event = getattr(getattr(window, "events", None), "before_show", None)
+                if ready_event is None or not ready_event.wait(10):
+                    raise RuntimeError("Окно проектора не успело инициализироваться")
             window.show()
             LOGGER.info("Projector window shown")
             if self.current_site_url:
