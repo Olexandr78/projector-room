@@ -170,6 +170,7 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertEqual((teacher.Location.X, teacher.Location.Y), (12, 268))
         self.assertEqual((teacher.Size.Width, teacher.Size.Height), (875, 480))
         self.assertEqual(len(teacher.NavigationCompleted.handlers), 1)
+        self.assertFalse(teacher.Visible, "precreated blank preview must stay hidden")
 
     def test_invoke_preserves_callback_false_result(self):
         api, *_ = self.make_api()
@@ -195,7 +196,7 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
 
         self.assertEqual(teacher.parent_assignments, 1)
         self.assertEqual(len(teacher.NavigationCompleted.handlers), 1)
-        self.assertEqual(teacher.bring_to_front_count, 2)
+        self.assertEqual(teacher.bring_to_front_count, 0)
 
     def test_position_uses_invoke_even_when_invoke_returns_none(self):
         api, teacher, _, _, _ = self.make_api()
@@ -226,15 +227,19 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertFalse(worker.is_alive(), "attach worker did not finish")
         self.assertEqual(teacher.parent_assignments, 1)
 
-    def test_open_site_uses_precreated_windows(self):
-        api, _, _, _, _ = self.make_api()
+    def test_open_site_uses_precreated_windows_and_shows_surfaces(self):
+        api, teacher, projector, _, _ = self.make_api()
         with patch.object(app.sys, "platform", "win32"):
-            with patch.object(api, "_schedule_attach_retry") as schedule:
-                self.assertTrue(api.open_site("example.com"))
+            self.assertTrue(api._attach_browser_surface("teacher"))
+            self.assertTrue(api._attach_browser_surface("projector"))
+            self.assertFalse(teacher.Visible)
+            self.assertFalse(projector.Visible)
+            self.assertTrue(api.open_site("example.com"))
 
         self.assertEqual(api.teacher_browser_window.loaded_urls, ["https://example.com"])
         self.assertEqual(api.projector_browser_window.loaded_urls, ["https://example.com"])
-        self.assertGreaterEqual(schedule.call_count, 0)
+        self.assertTrue(teacher.Visible)
+        self.assertTrue(projector.Visible)
 
     def test_navigation_from_one_surface_mirrors_only_once(self):
         api, _, _, _, _ = self.make_api()
@@ -277,6 +282,7 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
             self.assertTrue(api._attach_browser_surface("teacher"))
 
         self.assertEqual(teacher_window.loaded_urls, ["https://latest.example/lesson"])
+        self.assertTrue(teacher_window.native.webview.Visible)
 
     def test_open_projector_shows_existing_window_without_creating_another(self):
         api, _, _, _, _ = self.make_api()
