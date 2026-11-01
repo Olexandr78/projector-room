@@ -1032,6 +1032,7 @@ class DesktopWebviewApi:
         self._navigation_lock = threading.RLock()
         self._state_lock = threading.RLock()
         self._browser_loaded_urls = {"teacher": None, "projector": None}
+        self._browser_visible = {"teacher": False, "projector": False}
         LOGGER.info("DesktopWebviewApi initialized; base_url=%s", self.base_url)
 
     def diagnostic_log(self, message):
@@ -1089,14 +1090,21 @@ class DesktopWebviewApi:
         return bool(callback())
 
     def _set_browser_control_visible(self, kind, visible):
+        # Remember the desired state even before the native control is ready.
+        # A delayed attachment must not make an unused blank WebView visible.
+        with self._state_lock:
+            self._browser_visible[kind] = bool(visible)
+
         control = self._native_controls.get(kind)
         parent_window = self.main_window if kind == "teacher" else self.projector_window
         parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
         if control is None or parent_form is None:
-            return False
+            return True
 
         def update_visibility():
             control.Visible = bool(visible)
+            if visible:
+                control.BringToFront()
 
         try:
             return self._invoke_on_form(parent_form, update_visibility)
@@ -1181,8 +1189,11 @@ class DesktopWebviewApi:
 
                 browser_control.Location = Point(int(left), int(top))
                 browser_control.Size = Size(int(width), int(height))
-                browser_control.Visible = True
-                browser_control.BringToFront()
+                with self._state_lock:
+                    should_be_visible = self._browser_visible.get(kind, False)
+                browser_control.Visible = should_be_visible
+                if should_be_visible:
+                    browser_control.BringToFront()
 
                 if not already_attached and kind not in self._native_event_handlers:
                     def on_navigation_completed(sender, args, browser_kind=kind):
@@ -1267,8 +1278,11 @@ class DesktopWebviewApi:
                 return False
             control.Location = Point(int(left), int(top))
             control.Size = Size(int(width), int(height))
-            control.Visible = True
-            control.BringToFront()
+            with self._state_lock:
+                should_be_visible = self._browser_visible.get(kind, False)
+            control.Visible = should_be_visible
+            if should_be_visible:
+                control.BringToFront()
             return True
 
         try:
@@ -1393,6 +1407,7 @@ class DesktopWebviewApi:
 
                 with self._state_lock:
                     needs_navigation = self._browser_loaded_urls.get(kind) != url
+                    self._browser_visible[kind] = True
                 if needs_navigation:
                     try:
                         browser_window.load_url(url)
