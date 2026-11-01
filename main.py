@@ -192,18 +192,32 @@ def get_display_layout():
 
 
 
-# Проверка библиотек
+# Optional media/document engines must never prevent the classroom console from starting.
+# python-vlc can raise OSError/FileNotFoundError (not just ImportError) when the
+# Python wrapper is installed but the native libvlc.dll runtime is not.
 try:
     import vlc
     VLC_AVAILABLE = True
-except ImportError:
+except Exception as exc:
+    vlc = None
     VLC_AVAILABLE = False
+    LOGGER.warning(
+        "VLC engine is unavailable; local VLC playback is disabled: %s",
+        exc,
+        exc_info=True,
+    )
 
 try:
     import fitz  # PyMuPDF
     FITZ_AVAILABLE = True
-except ImportError:
+except Exception as exc:
+    fitz = None
     FITZ_AVAILABLE = False
+    LOGGER.warning(
+        "PyMuPDF is unavailable; PDF conversion features are disabled: %s",
+        exc,
+        exc_info=True,
+    )
 
 CONFIG_FILE = os.path.join(APP_DIR, "projector_config.json")
 
@@ -1723,7 +1737,6 @@ def run_portable_smoke_test():
         ("pptx", "python-pptx"),
         ("PIL", "Pillow"),
         ("yt_dlp", "yt-dlp"),
-        ("vlc", "python-vlc"),
     ]
     for module_name, label in required:
         try:
@@ -1732,6 +1745,13 @@ def run_portable_smoke_test():
         except Exception:
             failures.append(label)
             LOGGER.exception("Portable smoke test: %s import FAILED", label)
+
+    # VLC is optional: python-vlc is only a wrapper and libvlc.dll is a
+    # separate native runtime that may not be installed on school PCs.
+    if VLC_AVAILABLE:
+        LOGGER.info("Portable smoke test: VLC native engine available")
+    else:
+        LOGGER.info("Portable smoke test: VLC engine absent (optional feature disabled)")
 
     bundled_index = os.path.join(RESOURCE_DIR, "dist", "index.html")
     if os.path.isfile(bundled_index):
