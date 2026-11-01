@@ -1048,6 +1048,56 @@ class DesktopWebviewApi:
         else:
             self.projector_browser_window = window
 
+    def _schedule_attach_retry(self, kind, attempt=0):
+        """Schedule at most one native attachment retry chain per browser."""
+        if attempt >= 100:
+            LOGGER.error("WebView attachment retry limit reached for %s", kind)
+            return False
+        with self._attach_state_lock:
+            if kind in self._attach_retry_pending:
+                return False
+            self._attach_retry_pending.add(kind)
+
+        def retry():
+            with self._attach_state_lock:
+                self._attach_retry_pending.discard(kind)
+            self._attach_browser_surface(kind, attempt + 1)
+
+        timer = threading.Timer(0.15, retry)
+        timer.daemon = True
+        timer.name = "WebViewAttach-" + kind
+        timer.start()
+        return True
+
+    def _invoke_on_form(self, form, callback):
+        """Run a WinForms callback on its owning UI thread.
+
+        System.Action is a void delegate. Control.Invoke(Action(...)) therefore
+        returns None even when the callback succeeds; success is established by
+        Invoke completing without an exception, not by converting its return value.
+        """
+        if bool(form.InvokeRequired):
+            from System import Action
+            form.Invoke(Action(callback))
+            return True
+        return bool(callback())
+
+    def _set_browser_control_visible(self, kind, visible):
+        control = self._native_controls.get(kind)
+        parent_window = self.main_window if kind == "teacher" else self.projector_window
+        parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
+        if control is None or parent_form is None:
+            return False
+
+        def update_visibility():
+            control.Visible = bool(visible)
+
+        try:
+            return self._invoke_on_form(parent_form, update_visibility)
+        except Exception:
+            LOGGER.exception("Could not set %s WebView visibility to %s", kind, visible)
+            return False
+
     def _native_hwnd(self, window, fallback_title):
         """Read the HWND directly from pywebview's native WinForms window."""
         import ctypes
