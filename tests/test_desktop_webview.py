@@ -236,6 +236,48 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertEqual(api.projector_browser_window.loaded_urls, ["https://example.com"])
         self.assertGreaterEqual(schedule.call_count, 0)
 
+    def test_navigation_from_one_surface_mirrors_only_once(self):
+        api, _, _, _, _ = self.make_api()
+        api.current_site_url = "https://start.example/"
+        api._browser_loaded_urls = {
+            "teacher": "https://start.example/",
+            "projector": "https://start.example/",
+        }
+        api.teacher_browser_window.url = "https://next.example/"
+
+        api._on_browser_loaded("teacher")
+        self.assertEqual(api.current_site_url, "https://next.example/")
+        self.assertEqual(
+            api.projector_browser_window.loaded_urls,
+            ["https://next.example/"],
+        )
+
+        # The mirrored load event must not ping-pong the same URL back.
+        api.projector_browser_window.url = "https://next.example/"
+        api._on_browser_loaded("projector")
+        self.assertEqual(
+            api.teacher_browser_window.loaded_urls,
+            [],
+        )
+
+    def test_navigation_waits_for_native_child_then_loads_latest_url(self):
+        api, _, _, _, _ = self.make_api()
+        teacher_window = api.teacher_browser_window
+        teacher_window.native = None
+
+        with patch.object(app.sys, "platform", "win32"):
+            with patch.object(api, "_schedule_attach_retry"):
+                self.assertTrue(api.open_site("latest.example/lesson"))
+
+            self.assertEqual(teacher_window.loaded_urls, [])
+            child_form = FakeForm()
+            child_form.webview = FakeControl(child_form)
+            teacher_window.native = child_form
+
+            self.assertTrue(api._attach_browser_surface("teacher"))
+
+        self.assertEqual(teacher_window.loaded_urls, ["https://latest.example/lesson"])
+
     def test_open_projector_shows_existing_window_without_creating_another(self):
         api, _, _, _, _ = self.make_api()
         projector = api.projector_window
