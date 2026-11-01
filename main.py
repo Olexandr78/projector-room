@@ -195,17 +195,20 @@ def get_display_layout():
 # Optional media/document engines must never prevent the classroom console from starting.
 # python-vlc can raise OSError/FileNotFoundError (not just ImportError) when the
 # Python wrapper is installed but the native libvlc.dll runtime is not.
-try:
-    import vlc
-    VLC_AVAILABLE = True
-except Exception as exc:
-    vlc = None
-    VLC_AVAILABLE = False
-    LOGGER.warning(
-        "VLC engine is unavailable; local VLC playback is disabled: %s",
-        exc,
-        exc_info=True,
-    )
+def _load_optional_vlc():
+    try:
+        import vlc as vlc_module
+        return vlc_module, True
+    except Exception as exc:
+        LOGGER.warning(
+            "VLC engine is unavailable; local VLC playback is disabled: %s",
+            exc,
+            exc_info=True,
+        )
+        return None, False
+
+
+vlc, VLC_AVAILABLE = _load_optional_vlc()
 
 try:
     import fitz  # PyMuPDF
