@@ -1485,6 +1485,7 @@ def launch_react_desktop_app():
         desktop_api = DesktopWebviewApi(app_url)
 
         LOGGER.info("Starting local UI server at %s", app_url)
+
         main_window = webview.create_window(
             DesktopWebviewApi.MAIN_WINDOW_TITLE,
             url=app_url,
@@ -1495,11 +1496,94 @@ def launch_react_desktop_app():
             js_api=desktop_api,
         )
         desktop_api.main_window = main_window
+
+        # Pre-create every native window before webview.start(). pywebview then
+        # creates all WinForms/WebView2 controls on its startup path instead of
+        # creating child windows from JavaScript bridge worker threads mid-session.
+        displays = get_display_layout()
+        secondary = next(
+            (display for display in displays if not display.get("primary")),
+            displays[1] if len(displays) > 1 else None,
+        )
+        if secondary:
+            projector_x = secondary["x"]
+            projector_y = secondary["y"]
+            projector_width = secondary["width"]
+            projector_height = secondary["height"]
+            projector_fullscreen = True
+        else:
+            projector_x, projector_y, projector_width, projector_height = 40, 40, 1280, 720
+            projector_fullscreen = False
+
+        desktop_api.projector_window = webview.create_window(
+            DesktopWebviewApi.PROJECTOR_WINDOW_TITLE,
+            url=app_url + "?mode=projector&nativeBrowser=1",
+            x=projector_x,
+            y=projector_y,
+            width=projector_width,
+            height=projector_height,
+            fullscreen=projector_fullscreen,
+            frameless=projector_fullscreen,
+            resizable=not projector_fullscreen,
+            hidden=True,
+            focus=False,
+            text_select=True,
+        )
+
+        if sys.platform == "win32":
+            desktop_api._set_browser_window(
+                "teacher",
+                webview.create_window(
+                    DesktopWebviewApi.BROWSER_TITLES["teacher"],
+                    url="about:blank",
+                    x=-32000,
+                    y=-32000,
+                    width=900,
+                    height=600,
+                    hidden=True,
+                    focus=False,
+                    frameless=True,
+                    resizable=False,
+                    text_select=True,
+                ),
+            )
+            desktop_api._set_browser_window(
+                "projector",
+                webview.create_window(
+                    DesktopWebviewApi.BROWSER_TITLES["projector"],
+                    url="about:blank",
+                    x=-32000,
+                    y=-32000,
+                    width=900,
+                    height=600,
+                    hidden=True,
+                    focus=False,
+                    frameless=True,
+                    resizable=False,
+                    text_select=True,
+                ),
+            )
+
+            for browser_kind in ("teacher", "projector"):
+                browser_window = desktop_api._browser_window(browser_kind)
+                try:
+                    browser_window.events.shown += (
+                        lambda *args, k=browser_kind: desktop_api._schedule_attach_retry(k, 0)
+                    )
+                    browser_window.events.loaded += (
+                        lambda *args, k=browser_kind: desktop_api._on_browser_loaded(k)
+                    )
+                except Exception:
+                    LOGGER.exception("Could not register startup events for %s WebView", browser_kind)
+
         try:
             main_window.events.shown += lambda *args: LOGGER.info("Main pywebview window shown")
             main_window.events.loaded += lambda *args: LOGGER.info("Main pywebview window loaded")
+            desktop_api.projector_window.events.loaded += (
+                lambda *args: LOGGER.info("Projector React window loaded")
+            )
         except Exception:
-            LOGGER.exception("Could not subscribe to main WebView events")
+            LOGGER.exception("Could not subscribe to pywebview startup events")
         try:
             LOGGER.info("Entering webview.start() event loop")
             webview.start()
