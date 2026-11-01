@@ -1079,8 +1079,13 @@ class DesktopWebviewApi:
         """
         if bool(form.InvokeRequired):
             from System import Action
-            form.Invoke(Action(callback))
-            return True
+            outcome = {"value": False}
+
+            def run_callback():
+                outcome["value"] = bool(callback())
+
+            form.Invoke(Action(run_callback))
+            return outcome["value"]
         return bool(callback())
 
     def _set_browser_control_visible(self, kind, visible):
