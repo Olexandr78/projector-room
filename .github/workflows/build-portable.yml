@@ -62,9 +62,18 @@ jobs:
       - name: Smoke-test the bundled executable
         shell: pwsh
         run: |
-          & ".\portable\ProjectorRoom.exe" --portable-smoke-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Portable EXE smoke test failed with exit code $LASTEXITCODE"
+          $exe = (Resolve-Path ".\portable\ProjectorRoom.exe").Path
+          $process = Start-Process -FilePath $exe -ArgumentList "--portable-smoke-test" -PassThru -Wait
+          Write-Host "Portable EXE exit code: $($process.ExitCode)"
+          $log = ".\portable\projector_room.log"
+          if (Test-Path $log) {
+            Write-Host "===== Projector Room smoke-test log ====="
+            Get-Content $log -Tail 120
+          } else {
+            Write-Host "No portable smoke-test log was created."
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Portable EXE smoke test failed with exit code $($process.ExitCode)"
           }
 
       - name: Upload portable Windows package
