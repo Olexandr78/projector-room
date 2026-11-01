@@ -1332,13 +1332,10 @@ class DesktopWebviewApi:
         return self._set_browser_control_visible("teacher", False)
 
     def open_site(self, url):
-        """Load a URL in native WebViews embedded in the teacher preview and projector."""
+        """Navigate the pre-created native WebViews; do not create WinForms windows here."""
         from urllib.parse import urlparse
-        import webview
 
-        url = str(url or "").strip()
-        if not url:
-            url = "about:blank"
+        url = str(url or "").strip() or "about:blank"
         if url != "about:blank":
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
@@ -1346,87 +1343,86 @@ class DesktopWebviewApi:
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
                 raise ValueError("Разрешены только адреса http:// и https://")
 
-        same_url = url == self.current_site_url
-        self.current_site_url = url
-        try:
-            from urllib.parse import urlparse
+        with self._navigation_lock:
+            self.current_site_url = url
             safe_host = urlparse(url).netloc if url != "about:blank" else "about:blank"
-        except Exception:
-            safe_host = "unknown"
-        LOGGER.info("open_site requested: target=%s url_host=%s same_url=%s",
-                    "teacher+projector" if self.projector_window is not None else "teacher",
-                    safe_host, same_url)
-        for kind in ("teacher", "projector"):
-            if kind == "projector" and self.projector_window is None:
-                continue
-            browser_window = self._browser_window(kind)
-            if browser_window is None:
-                browser_window = webview.create_window(
-                    self.BROWSER_TITLES[kind],
-                    url=url,
-                    x=-32000,
-                    y=-32000,
-                    width=900,
-                    height=600,
-                    fullscreen=False,
-                    frameless=True,
-                    resizable=False,
-                    text_select=True,
-                )
-                self._set_browser_window(kind, browser_window)
-                try:
-                    # _attach_browser_surface below owns the single retry chain.
-                    # Do not also attach from 'shown' and a second timer: those
-                    # three triggers raced and reparented the same control repeatedly.
-                    browser_window.events.loaded += lambda *args, k=kind: self._on_browser_loaded(k)
-                except Exception:
-                    LOGGER.exception("Could not subscribe to %s WebView loaded event", kind)
-            else:
-                try:
-                    if not same_url:
-                        LOGGER.info("%s WebView load_url started: %s", kind, url[:500])
-                        browser_window.load_url(url)
-                except Exception as exc:
-                    LOGGER.exception("%s WebView load_url failed: %s", kind, url[:500])
-                    raise RuntimeError("Не удалось загрузить сайт в WebView: {}".format(exc)) from exc
+            LOGGER.info("open_site requested: url_host=%s", safe_host)
 
-            self._attach_browser_surface(kind)
-            control = self._native_controls.get(kind)
-            if control is not None:
-                try:
-                    control.Visible = True
-                except Exception:
-                    pass
-        LOGGER.info("open_site scheduling completed for url_host=%s", safe_host)
+            for kind in ("teacher", "projector"):
+                if kind == "projector" and self.projector_window is None:
+                    continue
+                browser_window = self._browser_window(kind)
+                if browser_window is None:
+                    if sys.platform == "win32":
+                        LOGGER.error("%s WebView was not created during application startup", kind)
+                        if kind == "teacher":
+                            raise RuntimeError("Встроенный WebView учителя не был подготовлен при запуске")
+                        continue
+                    # Keep the existing non-Windows fallback; the Windows path never
+                    # creates native windows from a JavaScript bridge worker thread.
+                    import webview
+                    browser_window = webview.create_window(
+                        self.BROWSER_TITLES[kind],
+                        url=url,
+                        width=900,
+                        height=600,
+                        hidden=True,
+                        focus=False,
+                        text_select=True,
+                    )
+                    self._set_browser_window(kind, browser_window)
+
+                if getattr(browser_window, "native", None) is None:
+                    LOGGER.info("%s WebView is not ready; navigation deferred", kind)
+                    self._schedule_attach_retry(kind, 0)
+                    continue
+
+                if self._browser_loaded_urls.get(kind) != url:
+                    try:
+                        browser_window.load_url(url)
+                        self._browser_loaded_urls[kind] = url
+                        LOGGER.info("%s WebView load_url accepted: %s", kind, url[:500])
+                    except Exception as exc:
+                        LOGGER.exception("%s WebView load_url failed: %s", kind, url[:500])
+                        raise RuntimeError("Не удалось загрузить сайт в WebView: {}".format(exc)) from exc
+
+                self._set_browser_control_visible(kind, True)
+                if self._native_controls.get(kind) is None and sys.platform == "win32":
+                    self._schedule_attach_retry(kind, 0)
+
         return True
 
     def refresh_site(self):
-        """Reload the active page in both native browser surfaces."""
-        if not self.current_site_url:
+        """Reload the active URL in each initialized browser without creating windows."""
+        url = self.current_site_url
+        if not url:
             return False
-        for kind in ("teacher", "projector"):
-            window = self._browser_window(kind)
-            if window is not None:
+        with self._navigation_lock:
+            for kind in ("teacher", "projector"):
+                if kind == "projector" and self.projector_window is None:
+                    continue
+                window = self._browser_window(kind)
+                if window is None or getattr(window, "native", None) is None:
+                    if window is not None:
+                        self._schedule_attach_retry(kind, 0)
+                    continue
                 try:
-                    window.load_url(self.current_site_url)
+                    window.load_url(url)
+                    self._browser_loaded_urls[kind] = url
+                    self._set_browser_control_visible(kind, True)
                 except Exception:
-                    pass
-            control = self._native_controls.get(kind)
-            if control is not None:
-                try:
-                    control.Visible = True
-                except Exception:
-                    pass
+                    LOGGER.exception("Could not refresh %s WebView", kind)
+                    return False
         return True
 
     def close_site(self):
-        """Hide embedded browser controls when leaving browser mode."""
-        for control in self._native_controls.values():
-            try:
-                control.Visible = False
-            except Exception:
-                pass
-        return True
+        """Hide browser controls when leaving the Browser tab."""
+        result = True
+        for kind in ("teacher", "projector"):
+            if not self._set_browser_control_visible(kind, False):
+                if self._native_controls.get(kind) is not None:
+                    result = False
+        return result
 
     def save_pdf(self, filename, base64_data):
         """Save an uploaded PDF under the local app server so both WebViews can access it."""
