@@ -128,7 +128,15 @@ export default function App() {
           return;
         }
         if (event.data?.type === 'PROJECTOR_READY') {
-          setIsProjectorWindowOpen(true);
+          // In the native desktop app the projector React window is preloaded
+          // hidden at startup. It is not considered open until the native
+          // open_projector command resolves successfully.
+          const nativeDesktopApi = (window as Window & {
+            pywebview?: { api?: { open_projector?: () => Promise<unknown> } };
+          }).pywebview?.api;
+          if (!nativeDesktopApi?.open_projector) {
+            setIsProjectorWindowOpen(true);
+          }
           // Send current state immediately
           channel.postMessage({
             type: 'STATE_UPDATE',
