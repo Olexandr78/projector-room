@@ -1273,7 +1273,7 @@ class DesktopWebviewApi:
             return False
 
     def _on_browser_loaded(self, kind):
-        """Mirror link navigation between the teacher preview and projector WebView."""
+        """Mirror native navigation without repeatedly reloading both surfaces."""
         window = self._browser_window(kind)
         if window is None:
             return
@@ -1283,59 +1283,53 @@ class DesktopWebviewApi:
             LOGGER.exception("%s WebView loaded event could not read current URL", kind)
             return
         LOGGER.info("%s pywebview loaded event: url=%s", kind, (url or "")[:500])
-        if not url or not url.startswith(("http://", "https://")) or url == self.current_site_url:
+        if not url or not url.startswith(("http://", "https://")):
             return
 
-        self.current_site_url = url
-        for other_kind in ("teacher", "projector"):
-            if other_kind == kind:
-                continue
-            other_window = self._browser_window(other_kind)
-            if other_window is not None:
+        with self._navigation_lock:
+            self._browser_loaded_urls[kind] = url
+            if url == self.current_site_url:
+                return
+            self.current_site_url = url
+            for other_kind in ("teacher", "projector"):
+                if other_kind == kind:
+                    continue
+                other_window = self._browser_window(other_kind)
+                if other_window is None or getattr(other_window, "native", None) is None:
+                    continue
+                if self._browser_loaded_urls.get(other_kind) == url:
+                    continue
                 try:
                     other_window.load_url(url)
+                    self._browser_loaded_urls[other_kind] = url
                 except Exception:
-                    pass
+                    LOGGER.exception("Could not mirror %s navigation to %s", kind, other_kind)
 
-        # Keep the teacher address bar and shared projector state in step when a
-        # user follows a link inside either native WebView.
         if self.main_window is not None:
             try:
-                script = "window.dispatchEvent(new CustomEvent('projector-room-browser-navigate', {detail: " + json.dumps(url) + "}));"
+                script = (
+                    "window.dispatchEvent(new CustomEvent('projector-room-browser-navigate', "
+                    "{detail: " + json.dumps(url) + "}));"
+                )
                 self.main_window.evaluate_js(script)
             except Exception:
-                pass
+                LOGGER.exception("Could not update teacher browser address after navigation")
 
     def set_browser_preview_bounds(self, left, top, width, height):
-        """Position the native browser surface over the Browser tab inside the teacher app."""
+        """Store the preview rectangle and resize the attached native WebView."""
         next_bounds = tuple(int(round(value)) for value in (left, top, width, height))
         if next_bounds != self.preview_bounds:
-            LOGGER.info("Teacher preview bounds updated: %s", next_bounds)
+            LOGGER.debug("Teacher preview bounds updated: %s", next_bounds)
         self.preview_bounds = next_bounds
-        # The initial attachment is handled by open_site. Only reposition an
-        # existing native control here; repeated layout notifications must not
-        # create parallel attachment retry timers.
         if self._native_controls.get("teacher") is not None:
             self._position_browser_surface("teacher")
+        else:
+            self._schedule_attach_retry("teacher", 0)
         return True
 
     def hide_browser_preview(self):
-        """Hide only the teacher-side WebView when the Browser tab is not visible."""
-        control = self._native_controls.get("teacher")
-        if control is None:
-            return True
-        try:
-            parent = getattr(control, "Parent", None)
-            def hide_control():
-                control.Visible = False
-            if parent is not None and bool(parent.InvokeRequired):
-                from System import Action
-                parent.Invoke(Action(hide_control))
-            else:
-                hide_control()
-        except Exception:
-            pass
-        return True
+        """Hide only the teacher WebView when the Browser tab is not visible."""
+        return self._set_browser_control_visible("teacher", False)
 
     def open_site(self, url):
         """Load a URL in native WebViews embedded in the teacher preview and projector."""
