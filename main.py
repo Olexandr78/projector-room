@@ -27,22 +27,52 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 
 
-# Always write diagnostics next to main.py so a frozen GUI still leaves a log.
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH = os.path.join(APP_DIR, "projector_room.log")
-THREAD_DUMP_PATH = os.path.join(APP_DIR, "projector_room_threads.log")
+# Bundle resources and writable user data live in different places in a
+# PyInstaller one-file build. __file__ points into the extracted _MEIPASS folder;
+# sys.executable points to the portable EXE the user launched.
+RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_DIR = (
+    os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False)
+    else RESOURCE_DIR
+)
+
 LOGGER = logging.getLogger("projector_room")
 LOGGER.setLevel(logging.DEBUG)
 LOGGER.propagate = False
 
-_log_handler = RotatingFileHandler(
-    LOG_PATH, maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8"
-)
-_log_handler.setFormatter(logging.Formatter(
-    "%(asctime)s.%(msecs)03d [%(levelname)s] [%(threadName)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-))
-LOGGER.addHandler(_log_handler)
+def _create_file_logger():
+    global APP_DIR, LOG_PATH, THREAD_DUMP_PATH
+    candidates = [APP_DIR]
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidates.append(os.path.join(local_app_data, "ProjectorRoom"))
+    candidates.append(os.path.join(os.path.expanduser("~"), ".projector-room"))
+
+    for directory in candidates:
+        try:
+            os.makedirs(directory, exist_ok=True)
+            log_path = os.path.join(directory, "projector_room.log")
+            handler = RotatingFileHandler(
+                log_path, maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8"
+            )
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s.%(msecs)03d [%(levelname)s] [%(threadName)s] %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            ))
+            APP_DIR = directory
+            LOG_PATH = log_path
+            THREAD_DUMP_PATH = os.path.join(directory, "projector_room_threads.log")
+            LOGGER.addHandler(handler)
+            return
+        except OSError:
+            continue
+
+    # If every writable location failed, fail clearly instead of starting without logs.
+    raise OSError("Projector Room cannot find a writable folder for settings and logs")
+
+
+_create_file_logger()
 LOGGER.info("=" * 72)
 LOGGER.info("Projector Room starting; pid=%s python=%s platform=%s",
             os.getpid(), sys.version.split()[0], sys.platform)
@@ -175,7 +205,7 @@ try:
 except ImportError:
     FITZ_AVAILABLE = False
 
-CONFIG_FILE = "projector_config.json"
+CONFIG_FILE = os.path.join(APP_DIR, "projector_config.json")
 
 
 class ConfigManager:
@@ -681,13 +711,19 @@ class TeacherConsole(tk.Tk):
         # Close the previous embedded web window so only one projector page remains.
         if self.webview_process and self.webview_process.poll() is None:
             self.webview_process.terminate()
-        args = [
-            sys.executable, script_path, "--projector-webview", url,
-            str(x), str(y), str(width), str(height), fullscreen,
-        ]
+        if getattr(sys, "frozen", False):
+            args = [
+                sys.executable, "--projector-webview", url,
+                str(x), str(y), str(width), str(height), fullscreen,
+            ]
+        else:
+            args = [
+                sys.executable, script_path, "--projector-webview", url,
+                str(x), str(y), str(width), str(height), fullscreen,
+            ]
         try:
             self.webview_process = subprocess.Popen(
-                args, cwd=os.path.dirname(script_path)
+                args, cwd=APP_DIR
             )
         except OSError as exc:
             messagebox.showerror(
@@ -757,7 +793,7 @@ class TeacherConsole(tk.Tk):
         Использует исключительно чистый ASCII и CRLF окончания строк, что устраняет ошибки
         интерпретации кириллицы в командной строке Windows (OEM 866/CP1251).
         """
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = APP_DIR
         created_files = []
 
         install_bat_content = (
@@ -815,6 +851,18 @@ class TeacherConsole(tk.Tk):
             "ping 127.0.0.1 -n 3 >nul 2>&1\r\n"
             "exit /b 0\r\n"
         )
+
+        if getattr(sys, "frozen", False):
+            # In the portable edition there is no Python interpreter or installer
+            # to invoke. Both launchers simply start the EXE beside this BAT file.
+            portable_launcher = (
+                "@echo off\\r\\n"
+                "cd /d \\"%~dp0\\"\\r\\n"
+                "if not exist \\"%~dp0ProjectorRoom.exe\\" (echo ProjectorRoom.exe not found. & pause & exit /b 1)\\r\\n"
+                "start \\"\\" \\"%~dp0ProjectorRoom.exe\\"\\r\\n"
+            )
+            install_bat_content = portable_launcher
+            start_bat_content = portable_launcher
 
         start_bat_content = (
             "@echo off\r\n"
@@ -1470,7 +1518,7 @@ class DesktopWebviewApi:
         data = base64.b64decode(str(base64_data or ""), validate=True)
         if not data.startswith(b"%PDF-"):
             raise ValueError("Выбранный файл не похож на PDF")
-        upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist", "uploads")
+        upload_dir = os.path.join(RESOURCE_DIR, "dist", "uploads")
         os.makedirs(upload_dir, exist_ok=True)
         safe_name = "{}.pdf".format(uuid.uuid4().hex)
         target = os.path.join(upload_dir, safe_name)
@@ -1505,7 +1553,7 @@ def launch_react_desktop_app():
     A local HTTP origin is used so localStorage and BroadcastChannel work
     between the teacher console and the projector window.
     """
-    dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
+    dist_dir = os.path.join(RESOURCE_DIR, "dist")
     index_file = os.path.join(dist_dir, "index.html")
     if not os.path.isfile(index_file):
         return False
@@ -1665,7 +1713,44 @@ def launch_react_desktop_app():
             server_thread.join(timeout=2)
 
 
+def run_portable_smoke_test():
+    """Verify that a frozen one-file build contains its runtime and web assets."""
+    failures = []
+    required = [
+        ("webview", "pywebview"),
+        ("clr", "pythonnet CLR bridge"),
+        ("comtypes", "COM support"),
+        ("fitz", "PyMuPDF"),
+        ("pptx", "python-pptx"),
+        ("PIL", "Pillow"),
+        ("yt_dlp", "yt-dlp"),
+        ("vlc", "python-vlc"),
+    ]
+    for module_name, label in required:
+        try:
+            __import__(module_name)
+            LOGGER.info("Portable smoke test: %s import OK", label)
+        except Exception:
+            failures.append(label)
+            LOGGER.exception("Portable smoke test: %s import FAILED", label)
+
+    bundled_index = os.path.join(RESOURCE_DIR, "dist", "index.html")
+    if os.path.isfile(bundled_index):
+        LOGGER.info("Portable smoke test: bundled UI found at %s", bundled_index)
+    else:
+        failures.append("bundled dist/index.html")
+        LOGGER.error("Portable smoke test: missing %s", bundled_index)
+
+    if failures:
+        LOGGER.error("Portable smoke test failed: %s", ", ".join(failures))
+        return 1
+    LOGGER.info("Portable smoke test passed")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--portable-smoke-test" in sys.argv:
+        raise SystemExit(run_portable_smoke_test())
     if run_projector_webview():
         pass
     elif not launch_react_desktop_app():
