@@ -855,39 +855,39 @@ class TeacherConsole(tk.Tk):
         if getattr(sys, "frozen", False):
             # Portable launcher: no Python interpreter or pip on the target PC.
             portable_launcher = (
-                "@echo off\\r\\n"
-                'cd /d "%~dp0"\\r\\n'
-                'if not exist "%~dp0ProjectorRoom.exe" (echo ProjectorRoom.exe not found. & pause & exit /b 1)\\r\\n'
-                'start "" "%~dp0ProjectorRoom.exe"\\r\\n'
+                '@echo off\r\n'
+                'cd /d "%~dp0"\r\n'
+                'if not exist "%~dp0ProjectorRoom.exe" (echo ProjectorRoom.exe not found. & pause & exit /b 1)\r\n'
+                'start "" "%~dp0ProjectorRoom.exe"\r\n'
             )
             install_bat_content = portable_launcher
             start_bat_content = portable_launcher
         else:
             start_bat_content = (
-                "@echo off\\r\\n"
-                "cd /d \\"%~dp0\\"\\r\\n"
-                "title Projector Room Launcher\\r\\n"
-                "\\r\\n"
-                "echo [1/2] Enabling Screen Extension mode: displayswitch /extend\\r\\n"
-                'start "" displayswitch.exe /extend\\r\\n'
-                "ping 127.0.0.1 -n 2 >nul 2>&1\\r\\n"
-                "\\r\\n"
-                "echo [2/2] Launching Projector Room...\\r\\n"
-                "set \\"PYTHON_EXE=\\"\\r\\n"
-                "where python >nul 2>&1 && set \\"PYTHON_EXE=python\\"\\r\\n"
-                "if defined PYTHON_EXE goto :LaunchPython\\r\\n"
-                "where py >nul 2>&1 && set \\"PYTHON_EXE=py -3\\"\\r\\n"
-                "if defined PYTHON_EXE goto :LaunchPython\\r\\n"
-                "where python3 >nul 2>&1 && set \\"PYTHON_EXE=python3\\"\\r\\n"
-                "if defined PYTHON_EXE goto :LaunchPython\\r\\n"
-                "\\r\\n"
-                "echo [ERROR] Python 3 is not installed or not in PATH!\\r\\n"
-                "pause\\r\\n"
-                "exit /b 1\\r\\n"
-                "\\r\\n"
-                ":LaunchPython\\r\\n"
-                'start "" %PYTHON_EXE% "%~dp0main.py"\\r\\n'
-                "exit /b 0\\r\\n"
+                '@echo off\r\n'
+                'cd /d "%~dp0"\r\n'
+                'title Projector Room Launcher\r\n'
+                '\r\n'
+                'echo [1/2] Enabling Screen Extension mode: displayswitch /extend\r\n'
+                'start "" displayswitch.exe /extend\r\n'
+                'ping 127.0.0.1 -n 2 >nul 2>&1\r\n'
+                '\r\n'
+                'echo [2/2] Launching Projector Room...\r\n'
+                'set "PYTHON_EXE="\r\n'
+                'where python >nul 2>&1 && set "PYTHON_EXE=python"\r\n'
+                'if defined PYTHON_EXE goto :LaunchPython\r\n'
+                'where py >nul 2>&1 && set "PYTHON_EXE=py -3"\r\n'
+                'if defined PYTHON_EXE goto :LaunchPython\r\n'
+                'where python3 >nul 2>&1 && set "PYTHON_EXE=python3"\r\n'
+                'if defined PYTHON_EXE goto :LaunchPython\r\n'
+                '\r\n'
+                'echo [ERROR] Python 3 is not installed or not in PATH!\r\n'
+                'pause\r\n'
+                'exit /b 1\r\n'
+                '\r\n'
+                ':LaunchPython\r\n'
+                'start "" %PYTHON_EXE% "%~dp0main.py"\r\n'
+                'exit /b 0\r\n'
             )
 
         try:
