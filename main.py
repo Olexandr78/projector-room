@@ -1026,6 +1026,11 @@ class DesktopWebviewApi:
         self._native_handles = {}
         self._native_controls = {}
         self._native_event_handlers = {}
+        self._attach_state_lock = threading.RLock()
+        self._attach_in_progress = set()
+        self._attach_retry_pending = set()
+        self._navigation_lock = threading.RLock()
+        self._browser_loaded_urls = {"teacher": None, "projector": None}
         LOGGER.info("DesktopWebviewApi initialized; base_url=%s", self.base_url)
 
     def diagnostic_log(self, message):
