@@ -93,7 +93,12 @@ export const BrowserTab: React.FC<BrowserTabProps> = ({ state, onUpdateState }) 
 
       lastSentAt = performance.now();
       lastBounds = key;
-      void api.set_browser_preview_bounds!(...bounds).catch(() => {});
+      void api.set_browser_preview_bounds!(
+        bounds[0],
+        bounds[1],
+        bounds[2],
+        bounds[3],
+      ).catch(() => {});
     };
 
     const scheduleBounds = () => {
