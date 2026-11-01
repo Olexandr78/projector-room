@@ -244,6 +244,37 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertEqual(projector.show_count, 1)
         self.assertIs(api.projector_window, projector)
 
+    def test_launch_precreates_all_native_windows_before_event_loop(self):
+        created = []
+        fake_webview = types.ModuleType("webview")
+
+        def create_window(title, **kwargs):
+            window = FakeWindow()
+            created.append((title, kwargs, window))
+            return window
+
+        def start():
+            expected_titles = [
+                app.DesktopWebviewApi.MAIN_WINDOW_TITLE,
+                app.DesktopWebviewApi.PROJECTOR_WINDOW_TITLE,
+                app.DesktopWebviewApi.BROWSER_TITLES["teacher"],
+                app.DesktopWebviewApi.BROWSER_TITLES["projector"],
+            ]
+            self.assertEqual([item[0] for item in created], expected_titles)
+            self.assertTrue(created[1][1]["hidden"])
+            self.assertTrue(created[2][1]["hidden"])
+            self.assertTrue(created[3][1]["hidden"])
+            self.assertIsNotNone(created[0][1].get("js_api"))
+
+        fake_webview.create_window = create_window
+        fake_webview.start = start
+
+        with patch.object(app.sys, "platform", "win32"):
+            with patch.dict(sys.modules, {"webview": fake_webview}):
+                self.assertTrue(app.launch_react_desktop_app())
+
+        self.assertEqual(len(created), 4)
+
     def test_one_retry_timer_per_browser(self):
         api, *_ = self.make_api()
         created = []
