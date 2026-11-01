@@ -214,7 +214,7 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
             self.assertTrue(api._attach_browser_surface("teacher"))
             api.preview_bounds = (0, 0, 0, 0)
             self.assertFalse(api._position_browser_surface("teacher"))
-        self.assertEqual((teacher.Size.Width, teacher.Size.Height), (875, 480)) if False else None
+        self.assertEqual((teacher.Size.Width, teacher.Size.Height), (640, 360))
 
     def test_concurrent_attach_is_serialized(self):
         api, teacher, _, main_form, _ = self.make_api()
