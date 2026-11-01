@@ -172,6 +172,21 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertEqual(len(teacher.NavigationCompleted.handlers), 1)
         self.assertFalse(teacher.Visible, "precreated blank preview must stay hidden")
 
+    def test_missing_vlc_dll_disables_optional_video_without_crashing(self):
+        import builtins
+        original_import = builtins.__import__
+
+        def fail_vlc_only(name, *args, **kwargs):
+            if name == "vlc":
+                raise FileNotFoundError("libvlc.dll was not found")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fail_vlc_only):
+            module, available = app._load_optional_vlc()
+
+        self.assertIsNone(module)
+        self.assertFalse(available)
+
     def test_invoke_preserves_callback_false_result(self):
         api, *_ = self.make_api()
         form = FakeForm()
