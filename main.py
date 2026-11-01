@@ -1441,55 +1441,20 @@ class DesktopWebviewApi:
         return self.base_url.rstrip("/") + "/uploads/" + safe_name
 
     def open_projector(self):
-        import webview
+        """Show the projector window created before the WinForms event loop started."""
+        window = self.projector_window
+        if window is None:
+            raise RuntimeError("Окно проектора не было подготовлено при запуске приложения")
+        try:
+            window.show()
+            LOGGER.info("Projector window shown")
+            if self.current_site_url:
+                self.open_site(self.current_site_url)
+            return True
+        except Exception as exc:
+            LOGGER.exception("Could not show pre-created projector window")
+            raise RuntimeError("Не удалось открыть окно проектора: {}".format(exc)) from exc
 
-        if self.projector_window is not None:
-            try:
-                self.projector_window.show()
-                if self.current_site_url:
-                    self.open_site(self.current_site_url)
-                return True
-            except Exception:
-                self.projector_window = None
-
-        displays = get_display_layout()
-        secondary = next(
-            (display for display in displays if not display.get("primary")),
-            displays[1] if len(displays) > 1 else None,
-        )
-        if secondary:
-            x = secondary["x"]
-            y = secondary["y"]
-            width = secondary["width"]
-            height = secondary["height"]
-            fullscreen = True
-        else:
-            x, y, width, height = 40, 40, 1280, 720
-            fullscreen = False
-
-        self.projector_window = webview.create_window(
-            self.PROJECTOR_WINDOW_TITLE,
-            # Tell the projector React view that its page content is supplied
-            # by the native WebView control attached to this window.
-            url=self.base_url + "?mode=projector&nativeBrowser=1",
-            x=x,
-            y=y,
-            width=width,
-            height=height,
-            fullscreen=fullscreen,
-            frameless=fullscreen,
-            resizable=not fullscreen,
-            text_select=True,
-        )
-        if self.current_site_url:
-            timer = threading.Timer(0.3, self._ensure_projector_browser_surface)
-            timer.daemon = True
-            timer.start()
-        return True
-
-    def _ensure_projector_browser_surface(self):
-        if self.current_site_url:
-            self.open_site(self.current_site_url)
 
 def launch_react_desktop_app():
     """
