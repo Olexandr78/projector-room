@@ -1491,6 +1491,8 @@ def launch_react_desktop_app():
     if not os.path.isfile(index_file):
         return False
 
+    server = None
+    server_thread = None
     try:
         import webview
         from functools import partial
@@ -1607,13 +1609,9 @@ def launch_react_desktop_app():
             )
         except Exception:
             LOGGER.exception("Could not subscribe to pywebview startup events")
-        try:
-            LOGGER.info("Entering webview.start() event loop")
-            webview.start()
-            LOGGER.info("webview.start() returned")
-        finally:
-            server.shutdown()
-            server.server_close()
+        LOGGER.info("Entering webview.start() event loop")
+        webview.start()
+        LOGGER.info("webview.start() returned")
         return True
     except ImportError:
         root = tk.Tk()
@@ -1635,6 +1633,17 @@ def launch_react_desktop_app():
         )
         root.destroy()
         return True
+    finally:
+        # Also clean up if a hidden native window fails during startup, before
+        # pywebview.start() enters its event loop.
+        if server is not None:
+            try:
+                server.shutdown()
+                server.server_close()
+            except Exception:
+                LOGGER.exception("Could not shut down the local UI server cleanly")
+        if server_thread is not None and server_thread.is_alive():
+            server_thread.join(timeout=2)
 
 
 if __name__ == "__main__":
