@@ -171,6 +171,21 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertEqual((teacher.Size.Width, teacher.Size.Height), (875, 480))
         self.assertEqual(len(teacher.NavigationCompleted.handlers), 1)
 
+    def test_invoke_preserves_callback_false_result(self):
+        api, *_ = self.make_api()
+        form = FakeForm()
+        self.assertFalse(api._invoke_on_form(form, lambda: False))
+        self.assertTrue(api._invoke_on_form(form, lambda: True))
+
+    def test_zero_sized_preview_is_not_marked_as_attached(self):
+        api, teacher, _, _, _ = self.make_api()
+        api.preview_bounds = (0, 0, 0, 0)
+        with patch.object(app.sys, "platform", "win32"):
+            with patch.object(api, "_schedule_attach_retry") as schedule:
+                self.assertFalse(api._attach_browser_surface("teacher"))
+        self.assertEqual(teacher.parent_assignments, 0)
+        schedule.assert_called_once_with("teacher", 0)
+
     def test_second_attach_only_resizes_existing_control(self):
         api, teacher, _, _, _ = self.make_api()
 
