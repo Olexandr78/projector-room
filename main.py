@@ -1121,130 +1121,130 @@ class DesktopWebviewApi:
         return int(found) if found else 0
 
     def _attach_browser_surface(self, kind, attempt=0):
-        """Move the actual WinForms WebView control into the chosen app window."""
-        if sys.platform != "win32":
-            return False
-        child_window = self._browser_window(kind)
-        parent_window = self.main_window if kind == "teacher" else self.projector_window
-
-        child_form = getattr(child_window, "native", None) if child_window is not None else None
-        parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
-        browser_control = getattr(child_form, "webview", None) if child_form is not None else None
-
-        if child_form is None or parent_form is None or browser_control is None:
-            if attempt == 0:
-                LOGGER.info(
-                    "Waiting for %s WebView native handles: child_form=%s parent_form=%s control=%s",
-                    kind, child_form is not None, parent_form is not None, browser_control is not None,
-                )
-            if attempt < 100:
-                timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
-                timer.daemon = True
-                timer.start()
-            else:
-                LOGGER.error("Could not attach %s WebView after %s attempts", kind, attempt)
+        """Attach one pre-created native WebView control to its final parent, once."""
+        if sys.platform != "win32" or kind not in ("teacher", "projector"):
             return False
 
-        def attach_control():
-            from System.Drawing import Point, Size
-            from System.Windows.Forms import DockStyle
-
-            if kind == "teacher":
-                left, top, width, height = self.preview_bounds
-            else:
-                left, top = 0, 0
-                width = int(parent_form.ClientSize.Width)
-                height = int(parent_form.ClientSize.Height)
-
-            if width < 1 or height < 1:
+        with self._attach_state_lock:
+            if kind in self._attach_in_progress:
                 return False
-
-            already_attached = self._native_controls.get(kind) is browser_control
-            try:
-                already_attached = already_attached and browser_control.Parent == parent_form
-            except Exception:
-                already_attached = False
-
-            if not already_attached:
-                # pywebview creates its WebView2 control with Dock=Fill. After
-                # reparenting into the teacher form that would cover the entire app,
-                # ignoring the preview rectangle. Disable docking before assigning
-                # the explicit preview coordinates and dimensions.
-                browser_control.Dock = getattr(DockStyle, 'None')
-                browser_control.Parent = parent_form
-                self._native_controls[kind] = browser_control
-
-            browser_control.Location = Point(int(left), int(top))
-            browser_control.Size = Size(int(width), int(height))
-            browser_control.Visible = True
-            browser_control.BringToFront()
-
-            if not already_attached:
-                LOGGER.info(
-                    "Attached %s WebView once: bounds=(%s,%s,%s,%s), parent_client=(%s,%s), visible=%s",
-                    kind, left, top, width, height,
-                    int(parent_form.ClientSize.Width), int(parent_form.ClientSize.Height),
-                    bool(browser_control.Visible),
-                )
-                # Log the actual WebView2 navigation outcome. This distinguishes a
-                # correctly positioned but blank control from a failed navigation.
-                def on_navigation_completed(sender, args, browser_kind=kind):
-                    try:
-                        source = str(sender.Source) if sender.Source is not None else ""
-                        success = bool(args.IsSuccess)
-                        error_status = str(args.WebErrorStatus)
-                        LOGGER.info(
-                            "%s WebView2 NavigationCompleted: success=%s error=%s source=%s",
-                            browser_kind, success, error_status, source[:500],
-                        )
-                    except Exception:
-                        LOGGER.exception("%s WebView2 NavigationCompleted logging failed", browser_kind)
-
-                try:
-                    browser_control.NavigationCompleted += on_navigation_completed
-                    self._native_event_handlers[kind] = on_navigation_completed
-                except Exception:
-                    LOGGER.exception("Could not subscribe to %s WebView2 navigation events", kind)
-            else:
-                LOGGER.debug(
-                    "%s WebView already attached; updated bounds=(%s,%s,%s,%s)",
-                    kind, left, top, width, height,
-                )
-
-            # The original host Form is now only a shell; keep it hidden so it
-            # cannot appear as a separate browser window.
-            try:
-                child_form.Hide()
-            except Exception:
-                pass
-            return True
+            self._attach_in_progress.add(kind)
 
         try:
-            if bool(parent_form.InvokeRequired):
-                from System import Action
-                result = parent_form.Invoke(Action(attach_control))
-                return bool(result)
-            return bool(attach_control())
+            child_window = self._browser_window(kind)
+            parent_window = self.main_window if kind == "teacher" else self.projector_window
+            child_form = getattr(child_window, "native", None) if child_window is not None else None
+            parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
+            browser_control = getattr(child_form, "webview", None) if child_form is not None else None
+
+            if child_form is None or parent_form is None or browser_control is None:
+                if attempt == 0:
+                    LOGGER.info(
+                        "Waiting for %s WebView handles: child=%s parent=%s control=%s",
+                        kind, child_form is not None, parent_form is not None, browser_control is not None,
+                    )
+                self._schedule_attach_retry(kind, attempt)
+                return False
+
+            def attach_control():
+                from System.Drawing import Point, Size
+                from System.Windows.Forms import DockStyle
+
+                if kind == "teacher":
+                    left, top, width, height = self.preview_bounds
+                else:
+                    left, top = 0, 0
+                    width = int(parent_form.ClientSize.Width)
+                    height = int(parent_form.ClientSize.Height)
+
+                if width < 1 or height < 1:
+                    return False
+
+                already_attached = self._native_controls.get(kind) is browser_control
+                try:
+                    already_attached = already_attached and browser_control.Parent == parent_form
+                except Exception:
+                    already_attached = False
+
+                if not already_attached:
+                    # pywebview initializes WebView2 with Dock=Fill. Disable it
+                    # before reparenting so the teacher preview stays in its DOM bounds.
+                    browser_control.Dock = getattr(DockStyle, "None")
+                    browser_control.Parent = parent_form
+                    self._native_controls[kind] = browser_control
+
+                browser_control.Location = Point(int(left), int(top))
+                browser_control.Size = Size(int(width), int(height))
+                browser_control.Visible = True
+                browser_control.BringToFront()
+
+                if not already_attached and kind not in self._native_event_handlers:
+                    def on_navigation_completed(sender, args, browser_kind=kind):
+                        try:
+                            source = str(sender.Source) if sender.Source is not None else ""
+                            success = bool(args.IsSuccess)
+                            error_status = str(args.WebErrorStatus)
+                            LOGGER.info(
+                                "%s WebView2 NavigationCompleted: success=%s error=%s source=%s",
+                                browser_kind, success, error_status, source[:500],
+                            )
+                        except Exception:
+                            LOGGER.exception("%s NavigationCompleted diagnostics failed", browser_kind)
+
+                    try:
+                        browser_control.NavigationCompleted += on_navigation_completed
+                        self._native_event_handlers[kind] = on_navigation_completed
+                    except Exception:
+                        LOGGER.exception("Could not subscribe to %s WebView2 navigation", kind)
+
+                try:
+                    child_form.Hide()
+                except Exception:
+                    LOGGER.debug("Could not hide the original %s browser shell", kind, exc_info=True)
+
+                LOGGER.info(
+                    "%s WebView attachment complete: bounds=(%s,%s,%s,%s), parent_client=(%s,%s), reused=%s",
+                    kind, left, top, width, height,
+                    int(parent_form.ClientSize.Width), int(parent_form.ClientSize.Height),
+                    already_attached,
+                )
+                return True
+
+            # IMPORTANT: Action returns void. Invoke returning None still means
+            # attach_control ran successfully; _invoke_on_form handles that rule.
+            attached = self._invoke_on_form(parent_form, attach_control)
+            if not attached:
+                self._schedule_attach_retry(kind, attempt)
+                return False
+
+            with self._navigation_lock:
+                target_url = self.current_site_url
+                already_loaded = self._browser_loaded_urls.get(kind) == target_url
+            if target_url and not already_loaded:
+                try:
+                    child_window.load_url(target_url)
+                    with self._navigation_lock:
+                        self._browser_loaded_urls[kind] = target_url
+                    LOGGER.info("%s WebView deferred navigation loaded: %s", kind, target_url[:500])
+                except Exception:
+                    LOGGER.exception("%s WebView deferred navigation failed", kind)
+
+            return True
         except Exception:
-            if attempt == 0 or attempt >= 99:
-                LOGGER.exception("Failed to attach %s WebView (attempt %s)", kind, attempt + 1)
-            if attempt < 100:
-                timer = threading.Timer(0.1, self._attach_browser_surface, args=(kind, attempt + 1))
-                timer.daemon = True
-                timer.start()
+            LOGGER.exception("Failed to attach %s WebView (attempt %s)", kind, attempt + 1)
+            self._schedule_attach_retry(kind, attempt)
             return False
+        finally:
+            with self._attach_state_lock:
+                self._attach_in_progress.discard(kind)
 
     def _position_browser_surface(self, kind):
-        """Resize the reparented WebView control to its live preview rectangle."""
+        """Resize an already attached WebView on its owning WinForms thread."""
         if sys.platform != "win32":
             return False
         control = self._native_controls.get(kind)
         parent_window = self.main_window if kind == "teacher" else self.projector_window
         parent_form = getattr(parent_window, "native", None) if parent_window is not None else None
-
-        # Attachment/retry is started by open_site and the native window's shown
-        # event. Do not start another retry chain from frequent resize/scroll
-        # notifications while the native control is still being created.
         if control is None or parent_form is None:
             return False
 
@@ -1265,11 +1265,11 @@ class DesktopWebviewApi:
             return True
 
         try:
-            if bool(parent_form.InvokeRequired):
-                from System import Action
-                return bool(parent_form.Invoke(Action(position_control)))
-            return bool(position_control())
+            # Action is void: Invoke returning None still means the resize completed.
+            self._invoke_on_form(parent_form, position_control)
+            return True
         except Exception:
+            LOGGER.exception("Could not position %s WebView", kind)
             return False
 
     def _on_browser_loaded(self, kind):
