@@ -1286,9 +1286,8 @@ class DesktopWebviewApi:
             return True
 
         try:
-            # Action is void: Invoke returning None still means the resize completed.
-            self._invoke_on_form(parent_form, position_control)
-            return True
+            # _invoke_on_form captures the callback result across the void Action delegate.
+            return self._invoke_on_form(parent_form, position_control)
         except Exception:
             LOGGER.exception("Could not position %s WebView", kind)
             return False
