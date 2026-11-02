@@ -131,6 +131,20 @@ export default function App() {
           }
           return;
         }
+        if (event.data?.type === 'VIDEO_CONTROL' && event.data.sender === 'projector') {
+          const playing = Boolean(event.data.playing);
+          setProjectorState((prev) => {
+            if (!prev.activeVideo?.isYoutube) return prev;
+            if (event.data.videoId && prev.activeVideo.youtubeId !== event.data.videoId) return prev;
+            if (prev.activeVideo.playing === playing) return prev;
+            return {
+              ...prev,
+              activeVideo: { ...prev.activeVideo, playing },
+            };
+          });
+          return;
+        }
+
         if (event.data?.type === 'PROJECTOR_READY') {
           // In the native desktop app the projector React window is preloaded
           // hidden at startup. It is not considered open until the native
