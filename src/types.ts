@@ -153,6 +153,7 @@ export interface ProjectorState {
     scale: number;
     url?: string;
   } | null;
+  activeOffice: OfficeDocumentState | null;
   // Classroom alert / banner
   classroomAlert: {
     visible: boolean;
@@ -178,4 +179,6 @@ export interface SyncMessage {
   timestamp: number;
   currentTime?: number;
   duration?: number;
+  videoId?: string;
+  playing?: boolean;
 }
