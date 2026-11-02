@@ -66,6 +66,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
   const videoRef = useRef<HTMLVideoElement>(null);
   const youtubeRef = useRef<HTMLIFrameElement>(null);
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
+  const youtubeLastSyncAtRef = useRef(0);
 
   // Cross-window BroadcastChannel synchronization
   useEffect(() => {
@@ -216,6 +217,65 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
       window.clearTimeout(stopId);
     };
   }, [state.mode, state.activeVideo?.isYoutube, state.activeVideo?.youtubeId, state.activeVideo?.playing]);
+
+  // Listen to the actual YouTube player so manual controls on the projector
+  // are reflected back in the teacher console as well.
+  useEffect(() => {
+    if (state.mode !== 'video' || !state.activeVideo?.isYoutube) return;
+
+    const handleYoutubeMessage = (event: MessageEvent) => {
+      const frame = youtubeRef.current;
+      if (!frame?.contentWindow || event.source !== frame.contentWindow) return;
+      if (event.origin !== 'https://www.youtube-nocookie.com') return;
+
+      let payload: Record<string, unknown>;
+      try {
+        payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+      if (!payload || typeof payload !== 'object') return;
+
+      const info = payload.info && typeof payload.info === 'object'
+        ? payload.info as Record<string, unknown>
+        : {};
+      const playerState = payload.event === 'onStateChange'
+        ? Number(payload.info)
+        : Number(info.playerState);
+
+      if (Number.isFinite(playerState) && playerState >= -1 && playerState <= 3) {
+        const playing = playerState === 1;
+        syncChannelRef.current?.postMessage({
+          type: 'VIDEO_CONTROL',
+          sender: 'projector',
+          videoId: state.activeVideo?.youtubeId,
+          playing,
+          timestamp: Date.now(),
+        });
+        setState((prev) => {
+          if (!prev.activeVideo?.isYoutube || prev.activeVideo.playing === playing) return prev;
+          return { ...prev, activeVideo: { ...prev.activeVideo, playing } };
+        });
+      }
+
+      const currentTime = Number(info.currentTime);
+      const duration = Number(info.duration);
+      const now = Date.now();
+      if (Number.isFinite(currentTime) && currentTime >= 0 && now - youtubeLastSyncAtRef.current >= 1000) {
+        youtubeLastSyncAtRef.current = now;
+        syncChannelRef.current?.postMessage({
+          type: 'VIDEO_TIME_UPDATE',
+          sender: 'projector',
+          currentTime,
+          duration: Number.isFinite(duration) ? duration : 0,
+          timestamp: now,
+        });
+      }
+    };
+
+    window.addEventListener('message', handleYoutubeMessage);
+    return () => window.removeEventListener('message', handleYoutubeMessage);
+  }, [state.mode, state.activeVideo?.isYoutube, state.activeVideo?.youtubeId]);
 
   // Auto-hide cursor logic
   useEffect(() => {
@@ -413,11 +473,21 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
                     onLoad={() => {
                       const frame = youtubeRef.current;
                       if (!frame?.contentWindow) return;
+                      const targetOrigin = 'https://www.youtube-nocookie.com';
+                      frame.contentWindow.postMessage(JSON.stringify({
+                        event: 'listening',
+                        id: 'projector-room',
+                      }), targetOrigin);
+                      frame.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: 'addEventListener',
+                        args: ['onStateChange'],
+                      }), targetOrigin);
                       frame.contentWindow.postMessage(JSON.stringify({
                         event: 'command',
                         func: state.activeVideo?.playing ? 'playVideo' : 'pauseVideo',
                         args: [],
-                      }), 'https://www.youtube-nocookie.com');
+                      }), targetOrigin);
                     }}
                     className="w-full h-full border-none"
                   />
