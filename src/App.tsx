@@ -105,7 +105,7 @@ export default function App() {
       active: false,
       remainingSeconds: 300,
       totalSeconds: 300,
-      title: 'Таймер проверочной работы',
+      title: 'Таймер контрольної роботи',
       showOnProjector: true,
     },
     drawings: [],
@@ -314,7 +314,7 @@ export default function App() {
       const newImg: ImageItem = {
         id: `img_${Date.now()}`,
         title: file.name,
-        category: 'Локальные файлы',
+        category: 'Локальні файли',
         url,
       };
       setCustomImages((prev) => [newImg, ...prev]);
@@ -428,14 +428,14 @@ export default function App() {
   // Active status description for native bottom status bar
   const getStatusText = () => {
     if (projectorState.isBlackout) return 'Шторка активна (экран скрыт)';
-    if (projectorState.isFrozen) return 'Кадр заморожен';
-    if (projectorState.mode === 'presentation') return 'Трансляция презентации';
-    if (projectorState.mode === 'images') return `Показ изображения: ${projectorState.activeImage?.title || ''}`;
-    if (projectorState.mode === 'video') return `Воспроизведение VLC: ${projectorState.activeVideo?.title || ''}`;
-    if (projectorState.mode === 'pdf') return 'Просмотр документа PDF';
-    if (projectorState.mode === 'office') return 'Просмотр документа Word / Excel';
-    if (projectorState.mode === 'browser') return `Окно браузера: ${projectorState.activeBrowser?.title || ''}`;
-    return 'Готов к работе';
+    if (projectorState.isFrozen) return 'Кадр зафіксовано';
+    if (projectorState.mode === 'presentation') return 'Трансляція презентації';
+    if (projectorState.mode === 'images') return `Показ зображення: ${projectorState.activeImage?.title || ''}`;
+    if (projectorState.mode === 'video') return `Відтворення VLC: ${projectorState.activeVideo?.title || ''}`;
+    if (projectorState.mode === 'pdf') return 'Перегляд документа PDF';
+    if (projectorState.mode === 'office') return 'Перегляд документа Word / Excel';
+    if (projectorState.mode === 'browser') return `Вікно браузера: ${projectorState.activeBrowser?.title || ''}`;
+    return 'Готовий до роботи';
   };
 
   // Otherwise, render Native Desktop Teacher Console
@@ -481,7 +481,7 @@ export default function App() {
             }`}
           >
             <Presentation className="w-4 h-4" />
-            <span>📊 Презентация PPTX</span>
+            <span>📊 Презентація PPTX</span>
           </button>
 
           <button
@@ -497,7 +497,7 @@ export default function App() {
             }`}
           >
             <FileText className="w-4 h-4" />
-            <span>📄 Документы PDF</span>
+            <span>📄 Документи PDF</span>
           </button>
 
           <button
@@ -526,7 +526,7 @@ export default function App() {
             }`}
           >
             <ImageIcon className="w-4 h-4" />
-            <span>🖼️ Картинки</span>
+            <span>🖼️ Зображення</span>
           </button>
 
           <button
@@ -542,7 +542,7 @@ export default function App() {
             }`}
           >
             <Film className="w-4 h-4" />
-            <span>🎬 Видео (VLC)</span>
+            <span>🎬 Відео (VLC)</span>
           </button>
 
           <button
@@ -571,7 +571,7 @@ export default function App() {
             }`}
           >
             <Wrench className="w-4 h-4" />
-            <span>⏱️ Таймер урока & Класс</span>
+            <span>⏱️ Таймер уроку та клас</span>
           </button>
         </div>
 
