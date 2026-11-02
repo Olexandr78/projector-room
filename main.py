@@ -25,6 +25,7 @@ from logging.handlers import RotatingFileHandler
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
+from io import BytesIO
 
 
 # Bundle resources and writable user data live in different places in a
@@ -1054,6 +1055,193 @@ def run_projector_webview():
         return True
 
 
+class ProjectorPreviewCapture:
+    """Capture the real projector top-level window and publish its latest JPEG frame."""
+
+    def __init__(self, hwnd_provider, fps=12, max_size=(1280, 720), quality=76):
+        self.hwnd_provider = hwnd_provider
+        self.fps = max(1, int(fps))
+        self.interval = 1.0 / self.fps
+        self.max_size = max_size
+        self.quality = int(quality)
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None
+        self._stop_event = threading.Event()
+        self._thread = None
+
+    def start(self):
+        if sys.platform != "win32" or self._thread is not None:
+            return False
+        self._thread = threading.Thread(
+            target=self._capture_loop,
+            name="ProjectorWindowCapture",
+            daemon=True,
+        )
+        self._thread.start()
+        LOGGER.info("Projector window capture started at %s FPS", self.fps)
+        return True
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=1.5)
+
+    def latest_frame(self):
+        with self._frame_lock:
+            return self._latest_frame
+
+    @staticmethod
+    def _looks_blank(image):
+        sample = image.convert("RGB").resize((24, 14))
+        return all(high <= 3 for _low, high in sample.getextrema())
+
+    @staticmethod
+    def _capture_hwnd(hwnd):
+        """Use PrintWindow first; fall back to the visible desktop rectangle for WebView2."""
+        if sys.platform != "win32" or not hwnd:
+            return None
+
+        import ctypes
+        from ctypes import wintypes
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG), ("top", wintypes.LONG),
+                ("right", wintypes.LONG), ("bottom", wintypes.LONG),
+            ]
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wintypes.DWORD),
+                ("biWidth", wintypes.LONG),
+                ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD),
+                ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD),
+                ("biXPelsPerMeter", wintypes.LONG),
+                ("biYPelsPerMeter", wintypes.LONG),
+                ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD),
+            ]
+
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [
+                ("bmiHeader", BITMAPINFOHEADER),
+                ("bmiColors", wintypes.DWORD * 3),
+            ]
+
+        user32 = ctypes.windll.user32
+        gdi32 = ctypes.windll.gdi32
+        hwnd_value = wintypes.HWND(int(hwnd))
+        rect = RECT()
+        if not user32.GetWindowRect(hwnd_value, ctypes.byref(rect)):
+            return None
+
+        width = int(rect.right - rect.left)
+        height = int(rect.bottom - rect.top)
+        if width < 2 or height < 2:
+            return None
+
+        screen_dc = None
+        memory_dc = None
+        bitmap = None
+        previous_bitmap = None
+        image = None
+        bits = ctypes.c_void_p()
+
+        try:
+            user32.GetDC.argtypes = [wintypes.HWND]
+            user32.GetDC.restype = ctypes.c_void_p
+            user32.ReleaseDC.argtypes = [wintypes.HWND, ctypes.c_void_p]
+            gdi32.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+            gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
+            gdi32.CreateDIBSection.argtypes = [
+                ctypes.c_void_p, ctypes.POINTER(BITMAPINFO), wintypes.UINT,
+                ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, wintypes.DWORD,
+            ]
+            gdi32.CreateDIBSection.restype = ctypes.c_void_p
+            gdi32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            gdi32.SelectObject.restype = ctypes.c_void_p
+            user32.PrintWindow.argtypes = [wintypes.HWND, ctypes.c_void_p, wintypes.UINT]
+            user32.PrintWindow.restype = wintypes.BOOL
+
+            screen_dc = user32.GetDC(hwnd_value)
+            if not screen_dc:
+                return None
+            memory_dc = gdi32.CreateCompatibleDC(screen_dc)
+            if not memory_dc:
+                return None
+
+            info = BITMAPINFO()
+            info.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            info.bmiHeader.biWidth = width
+            info.bmiHeader.biHeight = -height
+            info.bmiHeader.biPlanes = 1
+            info.bmiHeader.biBitCount = 32
+            info.bmiHeader.biCompression = 0  # BI_RGB
+            info.bmiHeader.biSizeImage = width * height * 4
+
+            bitmap = gdi32.CreateDIBSection(
+                screen_dc, ctypes.byref(info), 0, ctypes.byref(bits), None, 0
+            )
+            if not bitmap or not bits.value:
+                return None
+            previous_bitmap = gdi32.SelectObject(memory_dc, bitmap)
+            rendered = bool(user32.PrintWindow(hwnd_value, memory_dc, 0x00000002))
+            if rendered:
+                raw = ctypes.string_at(bits.value, width * height * 4)
+                image = Image.frombytes(
+                    "RGB", (width, height), raw, "raw", "BGRX", 0, 1
+                )
+        finally:
+            if memory_dc and previous_bitmap:
+                gdi32.SelectObject(memory_dc, previous_bitmap)
+            if bitmap:
+                gdi32.DeleteObject(bitmap)
+            if memory_dc:
+                gdi32.DeleteDC(memory_dc)
+            if screen_dc:
+                user32.ReleaseDC(hwnd_value, screen_dc)
+
+        try:
+            user32.IsWindowVisible.argtypes = [wintypes.HWND]
+            user32.IsWindowVisible.restype = wintypes.BOOL
+            is_visible = bool(user32.IsWindowVisible(hwnd_value))
+            needs_screen_fallback = image is None or ProjectorPreviewCapture._looks_blank(image)
+            if is_visible and needs_screen_fallback:
+                from PIL import ImageGrab
+                screen_image = ImageGrab.grab(
+                    bbox=(int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)),
+                    all_screens=True,
+                )
+                if image is None or not ProjectorPreviewCapture._looks_blank(screen_image):
+                    image = screen_image
+        except Exception:
+            pass
+
+        return image
+
+    def _capture_loop(self):
+        while not self._stop_event.is_set():
+            started = time.monotonic()
+            try:
+                hwnd = int(self.hwnd_provider() or 0)
+                image = self._capture_hwnd(hwnd)
+                if image is not None:
+                    image.thumbnail(self.max_size, Image.Resampling.LANCZOS)
+                    output = BytesIO()
+                    image.save(output, format="JPEG", quality=self.quality)
+                    with self._frame_lock:
+                        self._latest_frame = output.getvalue()
+            except Exception:
+                LOGGER.debug("Projector window capture attempt failed", exc_info=True)
+
+            elapsed = time.monotonic() - started
+            self._stop_event.wait(max(0.0, self.interval - elapsed))
+
+
+
 class DesktopWebviewApi:
     """Python bridge for the React teacher console and projector windows."""
     MAIN_WINDOW_TITLE = "Проекторная комната"
@@ -1074,6 +1262,7 @@ class DesktopWebviewApi:
             "refresh_site",
             "set_browser_preview_bounds",
             "hide_browser_preview",
+            "get_projector_preview_url",
             "save_pdf",
             "open_projector",
             "diagnostic_log",
@@ -1421,6 +1610,10 @@ class DesktopWebviewApi:
         """Hide only the teacher WebView when the Browser tab is not visible."""
         return self._set_browser_control_visible("teacher", False)
 
+    def get_projector_preview_url(self):
+        """Return the MJPEG endpoint that mirrors the actual projector window."""
+        return self.base_url.rstrip("/") + "/projector-preview.mjpg"
+
     def open_site(self, url):
         """Navigate the pre-created native WebViews; do not create WinForms windows here."""
         from urllib.parse import urlparse
@@ -1576,14 +1769,62 @@ def launch_react_desktop_app():
 
     server = None
     server_thread = None
+    preview_capture = None
     try:
         import webview
         from functools import partial
         from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+        from urllib.parse import urlsplit
 
         class QuietHandler(SimpleHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+            preview_capture = None
+
             def log_message(self, format, *args):
                 pass
+
+            def do_GET(self):
+                if urlsplit(self.path).path == "/projector-preview.mjpg":
+                    self._serve_projector_preview()
+                    return
+                super().do_GET()
+
+            def _serve_projector_preview(self):
+                capture = type(self).preview_capture
+                if capture is None:
+                    self.send_error(503, "Projector preview capture is not ready")
+                    return
+
+                try:
+                    self.send_response(200)
+                    self.send_header(
+                        "Content-Type",
+                        "multipart/x-mixed-replace; boundary=projector-frame",
+                    )
+                    self.send_header(
+                        "Cache-Control",
+                        "no-store, no-cache, must-revalidate, max-age=0",
+                    )
+                    self.send_header("Pragma", "no-cache")
+                    self.send_header("Connection", "keep-alive")
+                    self.end_headers()
+
+                    while True:
+                        frame = capture.latest_frame()
+                        if frame is None:
+                            time.sleep(0.08)
+                            continue
+                        self.wfile.write(b"--projector-frame\\r\\n")
+                        self.wfile.write(b"Content-Type: image/jpeg\\r\\n")
+                        self.wfile.write(
+                            ("Content-Length: {}\\r\\n\\r\\n".format(len(frame))).encode("ascii")
+                        )
+                        self.wfile.write(frame)
+                        self.wfile.write(b"\\r\\n")
+                        self.wfile.flush()
+                        time.sleep(capture.interval)
+                except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+                    return
 
         handler = partial(QuietHandler, directory=dist_dir)
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -1684,6 +1925,15 @@ def launch_react_desktop_app():
                 except Exception:
                     LOGGER.exception("Could not register startup events for %s WebView", browser_kind)
 
+        preview_capture = ProjectorPreviewCapture(
+            lambda: desktop_api._native_hwnd(
+                desktop_api.projector_window,
+                DesktopWebviewApi.PROJECTOR_WINDOW_TITLE,
+            ) if desktop_api.projector_window is not None else 0
+        )
+        QuietHandler.preview_capture = preview_capture
+        preview_capture.start()
+
         try:
             main_window.events.shown += lambda *args: LOGGER.info("Main pywebview window shown")
             main_window.events.loaded += lambda *args: LOGGER.info("Main pywebview window loaded")
@@ -1717,6 +1967,8 @@ def launch_react_desktop_app():
         root.destroy()
         return True
     finally:
+        if preview_capture is not None:
+            preview_capture.stop()
         # Also clean up if a hidden native window fails during startup, before
         # pywebview.start() enters its event loop.
         if server is not None:
