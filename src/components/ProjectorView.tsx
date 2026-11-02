@@ -456,7 +456,84 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
               </div>
             )}
 
-            {/* 5. Browser Tab Mode (Web pages & Simulators to Projector) */}
+            {/* 5. Word / Excel document viewer */}
+            {state.mode === 'office' && state.activeOffice && (
+              <div className="w-full h-full bg-neutral-100 text-neutral-900 overflow-hidden flex flex-col">
+                <div className="shrink-0 bg-neutral-200 border-b border-neutral-300 px-5 py-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold truncate">{state.activeOffice.title}</div>
+                    <div className="text-[10px] text-neutral-600">
+                      {state.activeOffice.kind === 'word' ? 'Документ Microsoft Word' : 'Книга Microsoft Excel'}
+                    </div>
+                  </div>
+                  {state.activeOffice.kind === 'excel' && state.activeOffice.sheets?.[state.activeOffice.activeSheetIndex] && (
+                    <div className="text-xs font-semibold text-neutral-700 shrink-0">
+                      {state.activeOffice.sheets[state.activeOffice.activeSheetIndex].name}
+                    </div>
+                  )}
+                </div>
+
+                {state.activeOffice.kind === 'word' && (
+                  <iframe
+                    title={state.activeOffice.title}
+                    sandbox=""
+                    referrerPolicy="no-referrer"
+                    srcDoc={`<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{box-sizing:border-box} body{margin:0;background:#e5e7eb;color:#111827;font-family:Arial, sans-serif;font-size:18px;line-height:1.55}
+.page{max-width:980px;min-height:100%;margin:0 auto;background:#fff;padding:56px 72px;box-shadow:0 0 24px #0002}
+h1{font-size:2em;margin:0 0 .7em} h2{font-size:1.55em;margin:1.2em 0 .5em}
+p{margin:.55em 0} ul,ol{padding-left:2em} table{border-collapse:collapse;width:100%;margin:1em 0}
+td,th{border:1px solid #9ca3af;padding:7px 9px;text-align:left;vertical-align:top}
+img{max-width:100%;height:auto}
+@media(max-width:700px){.page{padding:24px;font-size:16px}}
+</style></head><body><main class="page">${state.activeOffice.htmlContent || ''}</main></body></html>`}
+                    className="w-full flex-1 border-0 bg-white"
+                  />
+                )}
+
+                {state.activeOffice.kind === 'excel' && (() => {
+                  const sheet = state.activeOffice?.sheets?.[state.activeOffice.activeSheetIndex];
+                  if (!sheet) return <div className="p-8 text-center text-neutral-500">Лист пустой или не выбран.</div>;
+                  const [headerRow, ...bodyRows] = sheet.rows;
+                  return (
+                    <div className="flex-1 min-h-0 overflow-auto bg-white p-3">
+                      {sheet.rows.length === 0 ? (
+                        <div className="p-8 text-center text-neutral-500">В этом листе нет данных.</div>
+                      ) : (
+                        <table className="border-collapse text-sm text-neutral-900">
+                          {headerRow && (
+                            <thead className="sticky top-0 z-10 bg-emerald-100">
+                              <tr>
+                                <th className="border border-neutral-300 px-3 py-2 text-right text-neutral-500">#</th>
+                                {headerRow.map((cell, index) => (
+                                  <th key={index} className="border border-neutral-300 px-3 py-2 text-left font-semibold whitespace-nowrap">{cell}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                          )}
+                          <tbody>
+                            {bodyRows.map((row, rowIndex) => (
+                              <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
+                                <td className="border border-neutral-300 px-3 py-2 text-right text-neutral-400">{rowIndex + 2}</td>
+                                {headerRow?.map((_, columnIndex) => (
+                                  <td key={columnIndex} className="border border-neutral-300 px-3 py-2 whitespace-pre-wrap">{row[columnIndex] || ''}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* 6. Browser Tab Mode (Web pages & Simulators to Projector) */}
             {state.mode === 'browser' && state.activeBrowser && (
               <div className="w-full h-full bg-white flex items-center justify-center overflow-hidden">
                 {new URLSearchParams(window.location.search).get('nativeBrowser') !== '1' && (
@@ -478,7 +555,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
               </div>
             )}
 
-            {/* 6. Idle Mode */}
+            {/* 7. Idle Mode */}
             {state.mode === 'idle' && (
               <div className="text-center p-8">
                 <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 mx-auto mb-4">
