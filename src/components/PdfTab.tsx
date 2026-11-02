@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { ProjectorState } from '../types';
+import { PdfPageViewer } from './PdfPageViewer';
 import {
   FileText,
   Upload,
@@ -137,7 +138,7 @@ export const PdfTab: React.FC<PdfTabProps> = ({ state, onUpdateState }) => {
         activePdf: {
           id: `pdf_${Date.now()}`,
           currentPage: 1,
-          totalPages: 10,
+          totalPages: 1,
           scale: 1.0,
           url,
         },
@@ -258,12 +259,22 @@ export const PdfTab: React.FC<PdfTabProps> = ({ state, onUpdateState }) => {
       <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-8 shadow-inner overflow-hidden flex flex-col items-center">
         {customPdfUrl ? (
           /* Custom User Uploaded PDF */
-          <div className="w-full max-w-4xl h-[560px] bg-white rounded-lg shadow-2xl overflow-hidden">
-            <iframe
-              key={`${customPdfUrl}:${activePdf.currentPage}`}
-              src={`${customPdfUrl}#toolbar=0&navpanes=0&page=${activePdf.currentPage || 1}`}
-              title="Custom PDF Document"
-              className="w-full h-full border-none"
+          <div className="w-full max-w-4xl h-[560px] bg-neutral-800 rounded-lg shadow-2xl overflow-auto flex items-start justify-center p-3">
+            <PdfPageViewer
+              url={customPdfUrl}
+              pageNumber={activePdf.currentPage}
+              scale={activePdf.scale}
+              onDocumentLoaded={(totalPages) => {
+                if (state.activePdf?.url === customPdfUrl && state.activePdf.totalPages !== totalPages) {
+                  onUpdateState({
+                    activePdf: {
+                      ...state.activePdf,
+                      totalPages,
+                      currentPage: Math.min(state.activePdf.currentPage, totalPages),
+                    },
+                  });
+                }
+              }}
             />
           </div>
         ) : (
