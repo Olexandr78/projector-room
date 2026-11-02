@@ -47,6 +47,7 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
       activeBrowser: null,
       activePresentation: { id: '', currentSlideIndex: 0 },
       activePdf: null,
+      activeOffice: null,
       classroomAlert: null,
       timer: {
         active: false,
@@ -73,7 +74,33 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
       channel = new BroadcastChannel('projector_room_sync');
       syncChannelRef.current = channel;
       channel.onmessage = (event: MessageEvent<SyncMessage>) => {
-        if (event.data && event.data.type === 'STATE_UPDATE' && event.data.state) {
+        if (event.data?.type === 'VIDEO_CONTROL') {
+          const playing = Boolean(event.data.playing);
+          const videoId = event.data.videoId;
+          const sendCommand = () => {
+            const frame = youtubeRef.current;
+            if (!frame?.contentWindow) return;
+            frame.contentWindow.postMessage(JSON.stringify({
+              event: 'command',
+              func: playing ? 'playVideo' : 'pauseVideo',
+              args: [],
+            }), 'https://www.youtube-nocookie.com');
+          };
+          // Send now and again after the new iframe has had time to initialize.
+          sendCommand();
+          window.setTimeout(sendCommand, 150);
+          window.setTimeout(sendCommand, 450);
+          window.setTimeout(sendCommand, 1000);
+          setState((prev) => {
+            if (!prev.activeVideo?.isYoutube) return prev;
+            if (videoId && prev.activeVideo.youtubeId !== videoId) return prev;
+            if (prev.activeVideo.playing === playing) return prev;
+            return { ...prev, activeVideo: { ...prev.activeVideo, playing } };
+          });
+          return;
+        }
+
+        if (event.data?.type === 'STATE_UPDATE' && event.data.state) {
           setState((prev) => {
             if (prev.isFrozen && event.data.state?.isFrozen) {
               return prev;
@@ -164,17 +191,30 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     state.activeVideo?.playbackRate,
   ]);
 
-  // YouTube's player must receive explicit IFrame API commands; changing React
-  // state alone does not pause a video inside a cross-origin iframe.
+  // A state update is not enough for a cross-origin YouTube iframe: its
+  // player may still be starting when the first postMessage arrives. Repeat the
+  // idempotent play/pause command for a short window so the actual projector
+  // player receives it after initialization.
   useEffect(() => {
     if (state.mode !== 'video' || !state.activeVideo?.isYoutube) return;
-    const frame = youtubeRef.current;
-    if (!frame?.contentWindow) return;
-    frame.contentWindow.postMessage(JSON.stringify({
-      event: 'command',
-      func: state.activeVideo.playing ? 'playVideo' : 'pauseVideo',
-      args: [],
-    }), 'https://www.youtube-nocookie.com');
+    const playing = state.activeVideo.playing;
+    const sendCommand = () => {
+      const frame = youtubeRef.current;
+      if (!frame?.contentWindow) return;
+      frame.contentWindow.postMessage(JSON.stringify({
+        event: 'command',
+        func: playing ? 'playVideo' : 'pauseVideo',
+        args: [],
+      }), 'https://www.youtube-nocookie.com');
+    };
+
+    sendCommand();
+    const retryId = window.setInterval(sendCommand, 300);
+    const stopId = window.setTimeout(() => window.clearInterval(retryId), 3000);
+    return () => {
+      window.clearInterval(retryId);
+      window.clearTimeout(stopId);
+    };
   }, [state.mode, state.activeVideo?.isYoutube, state.activeVideo?.youtubeId, state.activeVideo?.playing]);
 
   // Auto-hide cursor logic
@@ -364,20 +404,20 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
               <div className="w-full h-full flex items-center justify-center bg-black">
                 {state.activeVideo.isYoutube && state.activeVideo.youtubeId ? (
                   <iframe
+                    key={state.activeVideo.youtubeId}
                     ref={youtubeRef}
-                    src={`https://www.youtube-nocookie.com/embed/${state.activeVideo.youtubeId}?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&origin=${encodeURIComponent(window.location.origin)}`}
+                    src={`https://www.youtube-nocookie.com/embed/${state.activeVideo.youtubeId}?autoplay=1&enablejsapi=1&controls=1&rel=0&modestbranding=1&playsinline=1&origin=${encodeURIComponent(window.location.origin)}`}
                     title={state.activeVideo.title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allow="autoplay; accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                     onLoad={() => {
                       const frame = youtubeRef.current;
-                      if (frame?.contentWindow) {
-                        frame.contentWindow.postMessage(JSON.stringify({
-                          event: 'command',
-                          func: state.activeVideo?.playing ? 'playVideo' : 'pauseVideo',
-                          args: [],
-                        }), 'https://www.youtube-nocookie.com');
-                      }
+                      if (!frame?.contentWindow) return;
+                      frame.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: state.activeVideo?.playing ? 'playVideo' : 'pauseVideo',
+                        args: [],
+                      }), 'https://www.youtube-nocookie.com');
                     }}
                     className="w-full h-full border-none"
                   />
