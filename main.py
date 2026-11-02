@@ -1290,7 +1290,7 @@ class DesktopWebviewApi:
 
     def diagnostic_log(self, message):
         """Accept short diagnostic notes from the React UI without exposing native objects."""
-        safe_message = str(message or "").replace("\\r", " ").replace("\\n", " ")[:600]
+        safe_message = str(message or "").replace("\r", " ").replace("\n", " ")[:600]
         LOGGER.info("[frontend] %s", safe_message)
         return True
 
@@ -1814,13 +1814,13 @@ def launch_react_desktop_app():
                         if frame is None:
                             time.sleep(0.08)
                             continue
-                        self.wfile.write(b"--projector-frame\\r\\n")
-                        self.wfile.write(b"Content-Type: image/jpeg\\r\\n")
+                        self.wfile.write(b"--projector-frame\r\n")
+                        self.wfile.write(b"Content-Type: image/jpeg\r\n")
                         self.wfile.write(
-                            ("Content-Length: {}\\r\\n\\r\\n".format(len(frame))).encode("ascii")
+                            ("Content-Length: {}\r\n\r\n".format(len(frame))).encode("ascii")
                         )
                         self.wfile.write(frame)
-                        self.wfile.write(b"\\r\\n")
+                        self.wfile.write(b"\r\n")
                         self.wfile.flush()
                         time.sleep(capture.interval)
                 except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
