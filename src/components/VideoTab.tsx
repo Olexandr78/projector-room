@@ -70,7 +70,7 @@ export const VideoTab: React.FC<VideoTabProps> = ({
         title: vid.title,
         playing: true,
         currentTime: 0,
-        duration: 45,
+        duration: 0,
         volume: 0.8,
         muted: false,
         playbackRate: 1.0,
@@ -147,7 +147,13 @@ export const VideoTab: React.FC<VideoTabProps> = ({
 
   const seekRelative = (delta: number) => {
     if (!activeVid) return;
-    const newTime = Math.max(0, Math.min(activeVid.duration || 100, activeVid.currentTime + delta));
+    const newTime = Math.max(0, Math.min(activeVid.duration || Number.MAX_SAFE_INTEGER, activeVid.currentTime + delta));
+    syncChannelRef.current?.postMessage({
+      type: 'VIDEO_SEEK',
+      sender: 'teacher',
+      currentTime: newTime,
+      timestamp: Date.now(),
+    });
     onUpdateState({
       activeVideo: {
         ...activeVid,
@@ -159,6 +165,12 @@ export const VideoTab: React.FC<VideoTabProps> = ({
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!activeVid) return;
     const newTime = parseFloat(e.target.value);
+    syncChannelRef.current?.postMessage({
+      type: 'VIDEO_SEEK',
+      sender: 'teacher',
+      currentTime: newTime,
+      timestamp: Date.now(),
+    });
     onUpdateState({
       activeVideo: {
         ...activeVid,
