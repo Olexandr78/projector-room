@@ -7,7 +7,8 @@ const MAX_WORD_HTML_SIZE = 8 * 1024 * 1024;
 const MAX_SHEETS = 20;
 const MAX_ROWS_PER_SHEET = 1000;
 const MAX_COLUMNS_PER_SHEET = 50;
-const MAX_CELL_LENGTH = 2000;
+const MAX_CELL_LENGTH = 1000;
+const MAX_TOTAL_CELLS = 100000;
 
 const ALLOWED_WORD_TAGS = new Set([
   'P', 'BR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
@@ -61,18 +62,26 @@ export async function parseOfficeFile(file: File): Promise<OfficeDocumentState> 
 
   if (filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
     const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
-    const sheets = workbook.SheetNames.slice(0, MAX_SHEETS).map((name) => {
+    const sheets = [];
+    let totalCells = 0;
+    for (const name of workbook.SheetNames.slice(0, MAX_SHEETS)) {
       const worksheet = workbook.Sheets[name];
       const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
         header: 1, raw: false, defval: '', blankrows: false,
       });
-      return {
-        name: String(name).slice(0, 120),
-        rows: matrix.slice(0, MAX_ROWS_PER_SHEET).map((row) =>
-          row.slice(0, MAX_COLUMNS_PER_SHEET).map(normalizeCell)
-        ),
-      };
-    });
+      const rows: string[][] = [];
+      for (const row of matrix.slice(0, MAX_ROWS_PER_SHEET)) {
+        const remainingCells = MAX_TOTAL_CELLS - totalCells;
+        if (remainingCells <= 0) break;
+        const limitedRow = row
+          .slice(0, Math.min(MAX_COLUMNS_PER_SHEET, remainingCells))
+          .map(normalizeCell);
+        rows.push(limitedRow);
+        totalCells += limitedRow.length;
+      }
+      sheets.push({ name: String(name).slice(0, 120), rows });
+      if (totalCells >= MAX_TOTAL_CELLS) break;
+    }
     if (sheets.length === 0) throw new Error('В книге Excel нет листов с данными.');
     return { id, title: file.name, kind: 'excel', sheets, activeSheetIndex: 0 };
   }
