@@ -1,11 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-// Vite emits the matching PDF.js worker as a separate asset.
-(pdfjsLib as any).GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString();
+// Use the worker version bundled with the installed PDF.js package.
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface PdfPageViewerProps {
   url: string;
