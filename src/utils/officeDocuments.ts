@@ -8,7 +8,8 @@ const MAX_SHEETS = 20;
 const MAX_ROWS_PER_SHEET = 1000;
 const MAX_COLUMNS_PER_SHEET = 50;
 const MAX_CELL_LENGTH = 1000;
-const MAX_TOTAL_CELLS = 100000;
+const MAX_TOTAL_CELLS = 50000;
+const MAX_TOTAL_TEXT_CHARS = 2 * 1024 * 1024;
 
 const ALLOWED_WORD_TAGS = new Set([
   'P', 'BR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
@@ -64,6 +65,7 @@ export async function parseOfficeFile(file: File): Promise<OfficeDocumentState> 
     const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
     const sheets = [];
     let totalCells = 0;
+    let totalCharacters = 0;
     for (const name of workbook.SheetNames.slice(0, MAX_SHEETS)) {
       const worksheet = workbook.Sheets[name];
       const matrix = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
@@ -71,16 +73,20 @@ export async function parseOfficeFile(file: File): Promise<OfficeDocumentState> 
       });
       const rows: string[][] = [];
       for (const row of matrix.slice(0, MAX_ROWS_PER_SHEET)) {
-        const remainingCells = MAX_TOTAL_CELLS - totalCells;
-        if (remainingCells <= 0) break;
-        const limitedRow = row
-          .slice(0, Math.min(MAX_COLUMNS_PER_SHEET, remainingCells))
-          .map(normalizeCell);
+        const limitedRow: string[] = [];
+        for (const rawValue of row.slice(0, MAX_COLUMNS_PER_SHEET)) {
+          if (totalCells >= MAX_TOTAL_CELLS || totalCharacters >= MAX_TOTAL_TEXT_CHARS) break;
+          const remainingCharacters = MAX_TOTAL_TEXT_CHARS - totalCharacters;
+          const cell = normalizeCell(rawValue).slice(0, remainingCharacters);
+          limitedRow.push(cell);
+          totalCells += 1;
+          totalCharacters += cell.length;
+        }
         rows.push(limitedRow);
-        totalCells += limitedRow.length;
+        if (totalCells >= MAX_TOTAL_CELLS || totalCharacters >= MAX_TOTAL_TEXT_CHARS) break;
       }
       sheets.push({ name: String(name).slice(0, 120), rows });
-      if (totalCells >= MAX_TOTAL_CELLS) break;
+      if (totalCells >= MAX_TOTAL_CELLS || totalCharacters >= MAX_TOTAL_TEXT_CHARS) break;
     }
     if (sheets.length === 0) throw new Error('В книге Excel нет листов с данными.');
     return { id, title: file.name, kind: 'excel', sheets, activeSheetIndex: 0 };
