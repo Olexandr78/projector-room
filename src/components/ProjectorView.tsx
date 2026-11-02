@@ -254,17 +254,19 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
         ? Number(payload.info)
         : Number(info.playerState);
 
-      if (Number.isFinite(playerState) && playerState >= -1 && playerState <= 3) {
+      // Ignore unstarted/buffering/cued notifications. Only authoritative
+      // PLAYING, PAUSED and ENDED states should update the remote controls.
+      if ([0, 1, 2].includes(playerState)) {
         const playing = playerState === 1;
-        syncChannelRef.current?.postMessage({
-          type: 'VIDEO_CONTROL',
-          sender: 'projector',
-          videoId: state.activeVideo?.youtubeId,
-          playing,
-          timestamp: Date.now(),
-        });
         setState((prev) => {
           if (!prev.activeVideo?.isYoutube || prev.activeVideo.playing === playing) return prev;
+          syncChannelRef.current?.postMessage({
+            type: 'VIDEO_CONTROL',
+            sender: 'projector',
+            videoId: state.activeVideo?.youtubeId,
+            playing,
+            timestamp: Date.now(),
+          });
           return { ...prev, activeVideo: { ...prev.activeVideo, playing } };
         });
       }
