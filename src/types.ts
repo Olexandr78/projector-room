@@ -173,7 +173,7 @@ export interface ProjectorState {
 }
 
 export interface SyncMessage {
-  type: 'STATE_UPDATE' | 'REQUEST_STATE' | 'HEARTBEAT' | 'PROJECTOR_READY' | 'VIDEO_TIME_UPDATE' | 'VIDEO_CONTROL';
+  type: 'STATE_UPDATE' | 'REQUEST_STATE' | 'HEARTBEAT' | 'PROJECTOR_READY' | 'VIDEO_TIME_UPDATE' | 'VIDEO_CONTROL' | 'VIDEO_SEEK' | 'PDF_METADATA';
   sender: 'teacher' | 'projector';
   state?: ProjectorState;
   timestamp: number;
@@ -181,4 +181,6 @@ export interface SyncMessage {
   duration?: number;
   videoId?: string;
   playing?: boolean;
+  pdfUrl?: string;
+  totalPages?: number;
 }
