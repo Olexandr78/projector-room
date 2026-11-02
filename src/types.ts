@@ -1,4 +1,4 @@
-export type TabType = 'presentation' | 'pdf' | 'images' | 'video' | 'browser' | 'tools';
+export type TabType = 'presentation' | 'pdf' | 'office' | 'images' | 'video' | 'browser' | 'tools';
 
 export interface SchoolClass {
   id: string;
@@ -79,6 +79,20 @@ export interface PdfDocumentState {
   currentPage: number;
 }
 
+export interface OfficeSheetState {
+  name: string;
+  rows: string[][];
+}
+
+export interface OfficeDocumentState {
+  id: string;
+  title: string;
+  kind: 'word' | 'excel';
+  htmlContent?: string;
+  sheets?: OfficeSheetState[];
+  activeSheetIndex: number;
+}
+
 export interface DrawingPath {
   id: string;
   points: { x: number; y: number }[]; // 0-100 percentage
@@ -88,7 +102,7 @@ export interface DrawingPath {
 
 export interface ProjectorState {
   version: number;
-  mode: 'presentation' | 'pdf' | 'images' | 'video' | 'browser' | 'blackboard' | 'timer' | 'idle';
+  mode: 'presentation' | 'pdf' | 'office' | 'images' | 'video' | 'browser' | 'blackboard' | 'timer' | 'idle';
   isBlackout: boolean; // "Шторка" - черный экран
   isFrozen: boolean; // "Заморозка" - проектор показывает зафиксированный кадр
   laserPointer: {
@@ -158,7 +172,7 @@ export interface ProjectorState {
 }
 
 export interface SyncMessage {
-  type: 'STATE_UPDATE' | 'REQUEST_STATE' | 'HEARTBEAT' | 'PROJECTOR_READY' | 'VIDEO_TIME_UPDATE';
+  type: 'STATE_UPDATE' | 'REQUEST_STATE' | 'HEARTBEAT' | 'PROJECTOR_READY' | 'VIDEO_TIME_UPDATE' | 'VIDEO_CONTROL';
   sender: 'teacher' | 'projector';
   state?: ProjectorState;
   timestamp: number;
