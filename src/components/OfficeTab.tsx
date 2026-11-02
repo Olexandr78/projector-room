@@ -93,7 +93,7 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({ state, onUpdateState }) =>
               </table>
             ) : <div className="p-5 text-xs text-neutral-500">Лист пустой.</div>}
           </div>
-          <p className="text-[11px] text-neutral-500">На проекторе отображается весь выбранный лист. Для скорости импорт ограничен 1000 строками и 50 столбцами на лист.</p>
+          <p className="text-[11px] text-neutral-500">На проекторе отображается весь выбранный лист. Для скорости импорт ограничен 1000 строками, 50 столбцами и 20 000 ячейками суммарно.</p>
         </div>
       )}
     </div>
