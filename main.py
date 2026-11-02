@@ -1134,6 +1134,14 @@ class ProjectorPreviewCapture:
         user32 = ctypes.windll.user32
         gdi32 = ctypes.windll.gdi32
         hwnd_value = wintypes.HWND(int(hwnd))
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+        user32.GetWindowRect.restype = wintypes.BOOL
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        gdi32.DeleteObject.argtypes = [ctypes.c_void_p]
+        gdi32.DeleteObject.restype = wintypes.BOOL
+        gdi32.DeleteDC.argtypes = [ctypes.c_void_p]
+        gdi32.DeleteDC.restype = wintypes.BOOL
         rect = RECT()
         if not user32.GetWindowRect(hwnd_value, ctypes.byref(rect)):
             return None
@@ -1205,8 +1213,6 @@ class ProjectorPreviewCapture:
                 user32.ReleaseDC(hwnd_value, screen_dc)
 
         try:
-            user32.IsWindowVisible.argtypes = [wintypes.HWND]
-            user32.IsWindowVisible.restype = wintypes.BOOL
             is_visible = bool(user32.IsWindowVisible(hwnd_value))
             needs_screen_fallback = image is None or ProjectorPreviewCapture._looks_blank(image)
             if is_visible and needs_screen_fallback:
