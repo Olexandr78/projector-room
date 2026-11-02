@@ -187,6 +187,30 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
         self.assertIsNone(module)
         self.assertFalse(available)
 
+    def test_projector_preview_url_is_exposed_by_desktop_api(self):
+        api = app.DesktopWebviewApi("http://127.0.0.1:8123/")
+        self.assertEqual(
+            api.get_projector_preview_url(),
+            "http://127.0.0.1:8123/projector-preview.mjpg",
+        )
+        self.assertIn("get_projector_preview_url", dir(api))
+
+    def test_projector_capture_encodes_a_real_frame_as_jpeg(self):
+        capture = app.ProjectorPreviewCapture(lambda: 123)
+        frame_image = app.Image.new("RGB", (320, 180), (30, 120, 220))
+
+        def capture_one_frame(_hwnd):
+            capture._stop_event.set()
+            return frame_image.copy()
+
+        with patch.object(app.ProjectorPreviewCapture, "_capture_hwnd", side_effect=capture_one_frame):
+            capture._capture_loop()
+
+        frame = capture.latest_frame()
+        self.assertIsNotNone(frame)
+        self.assertTrue(frame.startswith(b"\\xff\\xd8"))
+        self.assertTrue(frame.endswith(b"\\xff\\xd9"))
+
     def test_invoke_preserves_callback_false_result(self):
         api, *_ = self.make_api()
         form = FakeForm()
