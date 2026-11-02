@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ProjectorState, RoomConfig, SyncMessage } from '../types';
 import { SAMPLE_PRESENTATIONS } from '../constants/presets';
+import { PdfPageViewer } from './PdfPageViewer';
 import {
   Clock,
   FileText,
@@ -75,6 +76,22 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
       channel = new BroadcastChannel('projector_room_sync');
       syncChannelRef.current = channel;
       channel.onmessage = (event: MessageEvent<SyncMessage>) => {
+        if (event.data?.type === 'VIDEO_SEEK') {
+          const requestedTime = Number(event.data.currentTime);
+          const video = videoRef.current;
+          if (video && Number.isFinite(requestedTime) && requestedTime >= 0) {
+            const applySeek = () => {
+              const maxTime = Number.isFinite(video.duration) ? video.duration : requestedTime;
+              try {
+                video.currentTime = Math.min(requestedTime, Math.max(0, maxTime));
+              } catch {}
+            };
+            if (video.readyState >= 1) applySeek();
+            else video.addEventListener('loadedmetadata', applySeek, { once: true });
+          }
+          return;
+        }
+
         if (event.data?.type === 'VIDEO_CONTROL') {
           const playing = Boolean(event.data.playing);
           const videoId = event.data.videoId;
@@ -160,6 +177,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     vid.addEventListener('timeupdate', publishTime);
     vid.addEventListener('loadedmetadata', publishTime);
     vid.addEventListener('durationchange', publishTime);
+    // Metadata may already be available before this effect attaches its listeners.
+    publishTime();
     return () => {
       vid.removeEventListener('timeupdate', publishTime);
       vid.removeEventListener('loadedmetadata', publishTime);
@@ -522,12 +541,33 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
             {state.mode === 'pdf' && (
               <div className="w-full h-full bg-neutral-900 flex items-center justify-center p-8">
                 {state.activePdf?.url ? (
-                  <iframe
-                    key={`${state.activePdf.url}:${state.activePdf.currentPage}`}
-                    src={`${state.activePdf.url}#toolbar=0&navpanes=0&page=${state.activePdf.currentPage || 1}`}
-                    title="PDF Document"
-                    className="w-full h-full border-none rounded-lg shadow-2xl bg-white"
-                  />
+                  <div className="w-full h-full overflow-auto flex items-start justify-center p-4">
+                    <PdfPageViewer
+                      url={state.activePdf.url}
+                      pageNumber={state.activePdf.currentPage || 1}
+                      scale={state.activePdf.scale || 1}
+                      onDocumentLoaded={(totalPages) => {
+                        syncChannelRef.current?.postMessage({
+                          type: 'PDF_METADATA',
+                          sender: 'projector',
+                          pdfUrl: state.activePdf?.url,
+                          totalPages,
+                          timestamp: Date.now(),
+                        } satisfies SyncMessage);
+                        setState((prev) => {
+                          if (!prev.activePdf || prev.activePdf.url !== state.activePdf?.url || prev.activePdf.totalPages === totalPages) return prev;
+                          return {
+                            ...prev,
+                            activePdf: {
+                              ...prev.activePdf,
+                              totalPages,
+                              currentPage: Math.min(prev.activePdf.currentPage, totalPages),
+                            },
+                          };
+                        });
+                      }}
+                    />
+                  </div>
                 ) : (
                   <div className="w-full max-w-3xl rounded-xl border border-neutral-700 bg-neutral-950 p-10 text-center text-neutral-300">
                     <FileText className="mx-auto mb-4 h-10 w-10 text-neutral-500" />
