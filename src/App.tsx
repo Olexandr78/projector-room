@@ -5,6 +5,8 @@ import { Header } from './components/Header';
 import { ProfileModal } from './components/ProfileModal';
 import { PresentationTab } from './components/PresentationTab';
 import { PdfTab } from './components/PdfTab';
+import { OfficeTab } from './components/OfficeTab';
+import { parseOfficeFile } from './utils/officeDocuments';
 import { ImageTab } from './components/ImageTab';
 import { VideoTab } from './components/VideoTab';
 import { ClassroomToolsTab } from './components/ClassroomToolsTab';
@@ -14,6 +16,7 @@ import { ProjectorView } from './components/ProjectorView';
 import {
   Presentation,
   FileText,
+  FileSpreadsheet,
   Image as ImageIcon,
   Film,
   Globe,
@@ -90,6 +93,7 @@ export default function App() {
     activeBrowser: null,
     activePresentation: { id: '', currentSlideIndex: 0 },
     activePdf: null,
+    activeOffice: null,
     classroomAlert: null,
     timer: {
       active: false,
@@ -246,11 +250,24 @@ export default function App() {
   };
 
   // Universal file opener handler (Intelligently detects type and routes to correct tab)
-  const handleUniversalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUniversalFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const name = file.name.toLowerCase();
+    if (name.endsWith('.docx') || name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      try {
+        const office = await parseOfficeFile(file);
+        setActiveTab('office');
+        updateProjectorState({ mode: 'office', activeOffice: office });
+      } catch (error) {
+        alert(`Не удалось открыть документ Office: ${String(error)}`);
+      } finally {
+        e.target.value = '';
+      }
+      return;
+    }
+
     const url = URL.createObjectURL(file);
 
     if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.bmp') || name.endsWith('.webp')) {
@@ -376,6 +393,7 @@ export default function App() {
     if (projectorState.mode === 'images') return `Показ изображения: ${projectorState.activeImage?.title || ''}`;
     if (projectorState.mode === 'video') return `Воспроизведение VLC: ${projectorState.activeVideo?.title || ''}`;
     if (projectorState.mode === 'pdf') return 'Просмотр документа PDF';
+    if (projectorState.mode === 'office') return 'Просмотр документа Word / Excel';
     if (projectorState.mode === 'browser') return `Окно браузера: ${projectorState.activeBrowser?.title || ''}`;
     return 'Готов к работе';
   };
@@ -387,7 +405,7 @@ export default function App() {
       <input
         ref={universalFileInputRef}
         type="file"
-        accept="image/*,video/*,application/pdf,.pptx,.ppt"
+        accept="image/*,video/*,application/pdf,.pptx,.ppt,.docx,.xlsx,.xls"
         className="hidden"
         onChange={handleUniversalFileSelect}
       />
@@ -440,6 +458,19 @@ export default function App() {
           >
             <FileText className="w-4 h-4" />
             <span>📄 Документы PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('office')}
+            className={`px-4 py-2 border-t-2 font-medium flex items-center gap-2 transition-colors rounded-t ${
+              activeTab === 'office'
+                ? 'bg-neutral-950 border-amber-500 text-amber-400 font-semibold'
+                : 'border-transparent text-neutral-400 hover:text-white hover:bg-neutral-850'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>📁 Word / Excel</span>
           </button>
 
           <button
@@ -519,6 +550,10 @@ export default function App() {
 
               {activeTab === 'pdf' && (
                 <PdfTab state={projectorState} onUpdateState={updateProjectorState} />
+              )}
+
+              {activeTab === 'office' && (
+                <OfficeTab state={projectorState} onUpdateState={updateProjectorState} />
               )}
 
               {activeTab === 'images' && (
