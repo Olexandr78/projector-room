@@ -202,11 +202,22 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
     const sendCommand = () => {
       const frame = youtubeRef.current;
       if (!frame?.contentWindow) return;
+      const targetOrigin = 'https://www.youtube-nocookie.com';
+      frame.contentWindow.postMessage(JSON.stringify({
+        event: 'listening',
+        id: 1,
+        channel: 'widget',
+      }), targetOrigin);
+      frame.contentWindow.postMessage(JSON.stringify({
+        event: 'command',
+        func: 'addEventListener',
+        args: ['onStateChange'],
+      }), targetOrigin);
       frame.contentWindow.postMessage(JSON.stringify({
         event: 'command',
         func: playing ? 'playVideo' : 'pauseVideo',
         args: [],
-      }), 'https://www.youtube-nocookie.com');
+      }), targetOrigin);
     };
 
     sendCommand();
@@ -476,7 +487,8 @@ export const ProjectorView: React.FC<ProjectorViewProps> = ({ initialState, conf
                       const targetOrigin = 'https://www.youtube-nocookie.com';
                       frame.contentWindow.postMessage(JSON.stringify({
                         event: 'listening',
-                        id: 'projector-room',
+                        id: 1,
+                        channel: 'widget',
                       }), targetOrigin);
                       frame.contentWindow.postMessage(JSON.stringify({
                         event: 'command',
