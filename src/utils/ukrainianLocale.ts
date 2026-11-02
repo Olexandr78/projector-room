@@ -115,7 +115,7 @@ const PHRASES: Array<[string, string]> = [
   ['Справка', 'Довідка'],
 ];
 
-const SKIP_SELECTOR = 'iframe, script, style, textarea, input, [contenteditable="true"], .office-word-content, .office-sheet-data, .user-document-content';
+const SKIP_SELECTOR = 'iframe, table, script, style, textarea, input, [contenteditable="true"], .office-word-content, .office-sheet-data, .user-document-content';
 
 function translateText(value: string): string {
   const trimmed = value.trim();
