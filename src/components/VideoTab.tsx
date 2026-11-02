@@ -42,26 +42,25 @@ export const VideoTab: React.FC<VideoTabProps> = ({
   onAddCustomVideo,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const youtubePreviewRef = useRef<HTMLIFrameElement>(null);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
   const activeVid = state.activeVideo;
   const allVideos = [...customVideos];
 
-  const sendYouTubeCommand = (frame: HTMLIFrameElement | null, playing: boolean) => {
-    if (!frame?.contentWindow) return;
-    frame.contentWindow.postMessage(JSON.stringify({
-      event: 'command',
-      func: playing ? 'playVideo' : 'pauseVideo',
-      args: [],
-    }), 'https://www.youtube-nocookie.com');
-  };
-
   React.useEffect(() => {
-    if (!activeVid?.isYoutube) return;
-    sendYouTubeCommand(youtubePreviewRef.current, activeVid.playing);
-  }, [activeVid?.isYoutube, activeVid?.youtubeId, activeVid?.playing]);
+    try {
+      const channel = new BroadcastChannel('projector_room_sync');
+      syncChannelRef.current = channel;
+      return () => {
+        syncChannelRef.current = null;
+        channel.close();
+      };
+    } catch {
+      return undefined;
+    }
+  }, []);
 
   const handleSelectVideo = (vid: VideoItem) => {
     onUpdateState({
@@ -127,12 +126,23 @@ export const VideoTab: React.FC<VideoTabProps> = ({
 
   const togglePlay = () => {
     if (!activeVid) return;
+    const playing = !activeVid.playing;
     onUpdateState({
       activeVideo: {
         ...activeVid,
-        playing: !activeVid.playing,
+        playing,
       },
     });
+
+    if (activeVid.isYoutube) {
+      syncChannelRef.current?.postMessage({
+        type: 'VIDEO_CONTROL',
+        sender: 'teacher',
+        videoId: activeVid.youtubeId,
+        playing,
+        timestamp: Date.now(),
+      });
+    }
   };
 
   const seekRelative = (delta: number) => {
@@ -270,18 +280,15 @@ export const VideoTab: React.FC<VideoTabProps> = ({
 
         {activeVid ? (
           activeVid.isYoutube && activeVid.youtubeId ? (
-            /* YouTube Player Embed in Teacher Console */
+            /* Remote control for the single YouTube player on the projector */
             <div className="space-y-3">
-              <div className="aspect-video w-full max-w-2xl mx-auto rounded-lg overflow-hidden border border-neutral-800 bg-black shadow-lg">
-                <iframe
-                  ref={youtubePreviewRef}
-                  src={`https://www.youtube-nocookie.com/embed/${activeVid.youtubeId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
-                  title={activeVid.title}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  onLoad={() => sendYouTubeCommand(youtubePreviewRef.current, activeVid.playing)}
-                  className="w-full h-full border-none"
-                />
+              <div className="aspect-video w-full max-w-2xl mx-auto rounded-lg overflow-hidden border border-neutral-800 bg-black shadow-lg flex flex-col items-center justify-center gap-2">
+                <Youtube className="w-10 h-10 text-red-500" />
+                <div className="text-sm font-semibold text-white">YouTube открыт в окне проектора</div>
+                <div className="text-xs text-neutral-400">Пульт управляет роликом, который видит класс.</div>
+                <div className={`text-[11px] font-mono ${activeVid.playing ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {activeVid.playing ? '● Воспроизведение' : 'Ⅱ Пауза'}
+                </div>
               </div>
               <div className="flex items-center justify-center gap-3">
                 <button
@@ -293,7 +300,7 @@ export const VideoTab: React.FC<VideoTabProps> = ({
                   <span>{activeVid.playing ? 'Пауза' : 'Продолжить'}</span>
                 </button>
                 <div className="text-center text-[11px] text-neutral-400">
-                  Управление воспроизведением YouTube
+                  Дистанционное управление плеером на проекторе
                 </div>
               </div>
             </div>
