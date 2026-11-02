@@ -615,20 +615,20 @@ td,th{border:1px solid #9ca3af;padding:7px 9px;text-align:left;vertical-align:to
 img{max-width:100%;height:auto}
 @media(max-width:700px){.page{padding:24px;font-size:16px}}
 </style></head><body><main class="page">${state.activeOffice.htmlContent || ''}</main></body></html>`}
-                    className="w-full flex-1 border-0 bg-white"
+                    className="w-full flex-1 min-h-0 min-w-0 border-0 bg-white"
                   />
                 )}
 
                 {state.activeOffice.kind === 'excel' && (() => {
                   const sheet = state.activeOffice?.sheets?.[state.activeOffice.activeSheetIndex];
-                  if (!sheet) return <div className="p-8 text-center text-neutral-500">Лист пустой или не выбран.</div>;
+                  if (!sheet) return <div className="p-8 text-center text-neutral-500">Аркуш порожній або не вибраний.</div>;
                   const [headerRow, ...bodyRows] = sheet.rows;
                   return (
-                    <div className="flex-1 min-h-0 overflow-auto bg-white p-3">
+                    <div className="flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto overscroll-contain bg-white p-3 office-sheet-data">
                       {sheet.rows.length === 0 ? (
-                        <div className="p-8 text-center text-neutral-500">В этом листе нет данных.</div>
+                        <div className="p-8 text-center text-neutral-500">На цьому аркуші немає даних.</div>
                       ) : (
-                        <table className="border-collapse text-sm text-neutral-900">
+                        <table className="w-max min-w-full border-collapse text-sm text-neutral-900">
                           {headerRow && (
                             <thead className="sticky top-0 z-10 bg-emerald-100">
                               <tr>
