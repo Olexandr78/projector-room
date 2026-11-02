@@ -38,14 +38,14 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({ state, onUpdateState }) =>
             {office?.kind === 'excel' ? <FileSpreadsheet className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white">Word и Excel</h3>
-            <p className="text-xs text-neutral-400">Открытие документов на проекторе без Microsoft Office</p>
+            <h3 className="text-sm font-semibold text-white">Word та Excel</h3>
+            <p className="text-xs text-neutral-400">Показ документів на проєкторі без Microsoft Office</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {office && <span className="max-w-64 truncate text-xs text-neutral-300">{office.title}</span>}
           <button type="button" disabled={busy} onClick={() => fileInputRef.current?.click()} className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2">
-            <Upload className="w-4 h-4" /> {busy ? 'Открываю…' : 'Открыть файл'}
+            <Upload className="w-4 h-4" /> {busy ? 'Відкриваю…' : 'Відкрити файл'}
           </button>
           <input ref={fileInputRef} type="file" accept=".docx,.xlsx,.xls,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="hidden" onChange={(event) => void openFile(event.target.files?.[0])} />
         </div>
@@ -56,33 +56,33 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({ state, onUpdateState }) =>
       {!office && (
         <div className="rounded-xl border border-dashed border-neutral-700 bg-neutral-900/50 p-10 text-center">
           <FileSpreadsheet className="mx-auto mb-3 w-9 h-9 text-neutral-600" />
-          <div className="text-sm font-semibold text-neutral-200">Выбери документ Word или таблицу Excel</div>
-          <div className="mt-2 text-xs text-neutral-500">Поддерживаются .docx, .xlsx и .xls. Старый формат .doc не поддерживается.</div>
-          <div className="mt-1 text-xs text-neutral-600">Максимальный размер файла — 20 МБ.</div>
+          <div className="text-sm font-semibold text-neutral-200">Виберіть документ Word або таблицю Excel</div>
+          <div className="mt-2 text-xs text-neutral-500">Підтримуються .docx, .xlsx та .xls. Старий формат .doc не підтримується.</div>
+          <div className="mt-1 text-xs text-neutral-600">Максимальний розмір файлу — 20 МБ.</div>
         </div>
       )}
 
       {office?.kind === 'word' && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 space-y-2">
-          <div className="text-xs font-semibold text-neutral-300">{office.title} — документ готов к показу</div>
-          <div className="max-h-80 overflow-auto rounded-lg bg-white p-5 text-sm text-neutral-900">
+          <div className="text-xs font-semibold text-neutral-300">{office.title} — документ готовий до показу</div>
+          <div className="max-h-[70vh] min-h-0 overflow-y-auto overflow-x-auto overscroll-contain touch-pan-y rounded-lg bg-white p-5 text-sm text-neutral-900 office-word-preview">
             <div className="office-word-content" dangerouslySetInnerHTML={{ __html: office.htmlContent || '' }} />
           </div>
-          <p className="text-[11px] text-neutral-500">Пульт показывает обработанный текст, а справа — реальное изображение окна проектора.</p>
+          <p className="text-[11px] text-neutral-500">Панель керування показує оброблений текст, а праворуч — зображення вікна проєктора.</p>
         </div>
       )}
 
       {office?.kind === 'excel' && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs font-semibold text-neutral-200">Листы книги Excel</div>
+            <div className="text-xs font-semibold text-neutral-200">Аркуші книги Excel</div>
             <select value={office.activeSheetIndex} onChange={(event) => onUpdateState({ activeOffice: { ...office, activeSheetIndex: Number(event.target.value) } })} className="max-w-64 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-white">
               {(office.sheets || []).map((sheet, index) => <option key={sheet.name + index} value={index}>{sheet.name}</option>)}
             </select>
           </div>
-          <div className="max-h-96 overflow-auto rounded-lg border border-neutral-800">
+          <div className="max-h-[70vh] min-h-0 overflow-x-auto overflow-y-auto overscroll-contain touch-pan-y rounded-lg border border-neutral-800 office-sheet-data">
             {activeSheet?.rows.length ? (
-              <table className="min-w-full border-collapse text-left text-xs">
+              <table className="w-max min-w-full border-collapse text-left text-xs">
                 <tbody>
                   {activeSheet.rows.slice(0, 14).map((row, rowIndex) => (
                     <tr key={rowIndex} className={rowIndex === 0 ? 'bg-neutral-800 text-white font-semibold' : 'bg-neutral-950 text-neutral-300'}>
@@ -91,9 +91,9 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({ state, onUpdateState }) =>
                   ))}
                 </tbody>
               </table>
-            ) : <div className="p-5 text-xs text-neutral-500">Лист пустой.</div>}
+            ) : <div className="p-5 text-xs text-neutral-500">Аркуш порожній.</div>}
           </div>
-          <p className="text-[11px] text-neutral-500">На проекторе отображается весь выбранный лист. Для скорости импорт ограничен 1000 строками, 50 столбцами и 20 000 ячейками суммарно.</p>
+          <p className="text-[11px] text-neutral-500">На проєкторі відображається весь вибраний аркуш. Для швидкодії імпорт обмежено 1000 рядками, 50 стовпцями та 20 000 клітинками загалом.</p>
         </div>
       )}
     </div>
