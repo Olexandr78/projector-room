@@ -8,8 +8,8 @@ const MAX_SHEETS = 20;
 const MAX_ROWS_PER_SHEET = 1000;
 const MAX_COLUMNS_PER_SHEET = 50;
 const MAX_CELL_LENGTH = 1000;
-const MAX_TOTAL_CELLS = 50000;
-const MAX_TOTAL_TEXT_CHARS = 2 * 1024 * 1024;
+const MAX_TOTAL_CELLS = 20000;
+const MAX_TOTAL_TEXT_CHARS = 1 * 1024 * 1024;
 
 const ALLOWED_WORD_TAGS = new Set([
   'P', 'BR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
