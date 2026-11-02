@@ -118,6 +118,26 @@ export default function App() {
       broadcastChannelRef.current = channel;
 
       channel.onmessage = (event: MessageEvent<SyncMessage>) => {
+        if (event.data?.type === 'PDF_METADATA') {
+          const totalPages = Number(event.data.totalPages);
+          if (Number.isInteger(totalPages) && totalPages > 0) {
+            setProjectorState((prev) => {
+              if (!prev.activePdf || prev.activePdf.url !== event.data.pdfUrl || prev.activePdf.totalPages === totalPages) return prev;
+              const next = {
+                ...prev,
+                activePdf: {
+                  ...prev.activePdf,
+                  totalPages,
+                  currentPage: Math.min(prev.activePdf.currentPage, totalPages),
+                },
+              };
+              try { localStorage.setItem(STORAGE_KEY_STATE, JSON.stringify(next)); } catch {}
+              return next;
+            });
+          }
+          return;
+        }
+
         if (event.data?.type === 'VIDEO_TIME_UPDATE') {
           const currentTime = Number(event.data.currentTime);
           const duration = Number(event.data.duration);
@@ -321,7 +341,7 @@ export default function App() {
           title: file.name,
           playing: true,
           currentTime: 0,
-          duration: 60,
+          duration: 0,
           volume: 0.8,
           muted: false,
           playbackRate: 1.0,
