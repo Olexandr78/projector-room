@@ -23,11 +23,17 @@ import {
   Wrench
 } from 'lucide-react';
 import { soundEffects } from './utils/audio';
+import { installUkrainianLocale } from './utils/ukrainianLocale';
 
 const STORAGE_KEY_CONFIG = 'projector_room_config';
 const STORAGE_KEY_STATE = 'projector_room_state';
 
 export default function App() {
+  useEffect(() => {
+    const root = document.getElementById('root');
+    if (!root) return;
+    return installUkrainianLocale(root);
+  }, []);
   // Check if this window was opened as the dedicated Projector Screen
   const isProjectorWindow =
     typeof window !== 'undefined' &&
