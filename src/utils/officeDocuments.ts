@@ -48,7 +48,7 @@ function normalizeCell(value: unknown): string {
 
 export async function parseOfficeFile(file: File): Promise<OfficeDocumentState> {
   const filename = file.name.toLowerCase();
-  if (file.size > MAX_FILE_SIZE) throw new Error('Файл больше 20 МБ. Для показа выберите файл поменьше.');
+  if (file.size > MAX_FILE_SIZE) throw new Error('Файл завеликий (понад 20 МБ). Виберіть менший файл.');
   const arrayBuffer = await file.arrayBuffer();
   const id = 'office_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
@@ -56,7 +56,7 @@ export async function parseOfficeFile(file: File): Promise<OfficeDocumentState> 
     const result = await mammoth.convertToHtml({ arrayBuffer });
     const htmlContent = sanitizeWordHtml(result.value);
     if (htmlContent.length > MAX_WORD_HTML_SIZE) {
-      throw new Error('После обработки документ Word слишком большой для синхронизации между окнами.');
+      throw new Error('Після обробки документ Word завеликий для синхронізації між вікнами.');
     }
     return { id, title: file.name, kind: 'word', htmlContent, activeSheetIndex: 0 };
   }
@@ -88,9 +88,9 @@ export async function parseOfficeFile(file: File): Promise<OfficeDocumentState> 
       sheets.push({ name: String(name).slice(0, 120), rows });
       if (totalCells >= MAX_TOTAL_CELLS || totalCharacters >= MAX_TOTAL_TEXT_CHARS) break;
     }
-    if (sheets.length === 0) throw new Error('В книге Excel нет листов с данными.');
+    if (sheets.length === 0) throw new Error('У книзі Excel немає аркушів із даними.');
     return { id, title: file.name, kind: 'excel', sheets, activeSheetIndex: 0 };
   }
 
-  throw new Error('Поддерживаются документы Word .docx и таблицы Excel .xlsx / .xls.');
+  throw new Error('Підтримуються документи Word .docx і таблиці Excel .xlsx / .xls.');
 }
