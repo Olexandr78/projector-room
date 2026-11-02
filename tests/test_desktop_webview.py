@@ -208,8 +208,8 @@ class DesktopWebviewBridgeTests(unittest.TestCase):
 
         frame = capture.latest_frame()
         self.assertIsNotNone(frame)
-        self.assertTrue(frame.startswith(b"\\xff\\xd8"))
-        self.assertTrue(frame.endswith(b"\\xff\\xd9"))
+        self.assertTrue(frame.startswith(b"\xff\xd8"))
+        self.assertTrue(frame.endswith(b"\xff\xd9"))
 
     def test_invoke_preserves_callback_false_result(self):
         api, *_ = self.make_api()
